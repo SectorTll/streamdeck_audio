@@ -10,8 +10,11 @@ static class Program
     {
         var pluginDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
         Log.Init(pluginDir, "hakeys");
+        Glyphs.ImageDir = Path.Combine(pluginDir, "imgs", "glyphs");
 
         if (args.Length >= 2 && args[0] == "--icons") { WriteIcons(args[1]); return 0; }
+        // `HAKeys.exe --import-glyph <source.png> <imgs/glyphs/id.png>`: any black-on-white / white-on-black / transparent icon -> plugin glyph
+        if (args.Length >= 3 && args[0] == "--import-glyph") { GlyphImport.Convert(args[1], args[2]); return 0; }
         // `HAKeys.exe --selftest <url> <token>`: connect, list a few entities, exit.
         if (args.Length >= 3 && args[0] == "--selftest") return await SelfTest(args[1], args[2]);
 

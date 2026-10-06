@@ -144,9 +144,32 @@ public static class Glyphs
     public static readonly string[] Ids = { "headphones", "speaker", "speakers", "monitor", "vr", "headset", "usb", "bluetooth", "vol-up", "vol-down", "vol-mute", "vol-set", "play", "pause", "play-pause", "plug", "lamp", "floor", "window", "fan", "power", "none" };
     static readonly Color Ink = Color.FromArgb(225, 225, 225);
 
+    /// <summary>Folder with optional PNG glyphs (white on transparent); a file &lt;id&gt;.png overrides the drawn glyph.</summary>
+    public static string? ImageDir { get; set; }
+    static readonly ConcurrentDictionary<string, Bitmap?> ImageCache = new();
+
+    static Bitmap? ImageFor(string id)
+    {
+        if (ImageDir is null) return null;
+        return ImageCache.GetOrAdd(id, k =>
+        {
+            var path = Path.Combine(ImageDir, k + ".png");
+            if (!File.Exists(path)) return null;
+            try { using var fs = File.OpenRead(path); return new Bitmap(fs); }
+            catch { return null; }
+        });
+    }
+
     public static void Draw(Graphics g, string id, float dy)
     {
         g.TranslateTransform(0, dy);
+        if (ImageFor(id) is { } img)
+        {
+            // files are prepared at 144x144 with the glyph already placed; draw 1:1
+            lock (img) g.DrawImage(img, 0, 0, Renderer.Size, Renderer.Size);
+            g.ResetTransform();
+            return;
+        }
         switch (id)
         {
             case "headphones": Headphones(g); break;

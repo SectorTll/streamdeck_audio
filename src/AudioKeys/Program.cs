@@ -16,7 +16,7 @@ static class Program
         // `AudioKeys.exe --icons <dir>` writes the manifest icons using the same renderer, then exits.
         if (args.Length >= 2 && args[0] == "--icons") { WriteIcons(args[1]); return 0; }
         // `AudioKeys.exe --preview <file.png>` renders every glyph in the three states into one sheet (for eyeballing).
-        if (args.Length >= 2 && args[0] == "--preview") { WritePreview(args[1]); return 0; }
+        if (args.Length >= 2 && args[0] == "--preview") { if (args.Length >= 3) Glyphs.ImageDir = args[2]; WritePreview(args[1]); return 0; }
         // `AudioKeys.exe --selftest` exercises device switching + volume without Stream Deck and prints what happened.
         if (args.Length >= 1 && args[0] == "--selftest") return await SelfTest();
 
