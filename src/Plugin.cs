@@ -137,6 +137,7 @@ sealed class Plugin
 
     async Task OnKeyDown(string context, string? action, Settings s)
     {
+        Log.Info($"keyDown {action?[(action.LastIndexOf('.') + 1)..]} ({context[..8]})");
         try
         {
             switch (action)

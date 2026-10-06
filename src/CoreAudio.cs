@@ -214,7 +214,9 @@ sealed class EndpointVolume : IDisposable
             // AUDIO_VOLUME_NOTIFICATION_DATA: GUID guidEventContext; BOOL bMuted; float fMasterVolume; UINT nChannels; float[]
             var muted = Marshal.ReadInt32(data, 16) != 0;
             var volume = BitConverter.Int32BitsToSingle(Marshal.ReadInt32(data, 20));
-            _owner.Changed?.Invoke(volume, muted);
+            // never do work on the audio engine's callback thread
+            var owner = _owner;
+            Task.Run(() => owner.Changed?.Invoke(volume, muted));
             return 0;
         }
     }
@@ -327,16 +329,21 @@ sealed class CoreAudio : IDisposable
         try { _enumerator.UnregisterEndpointNotificationCallback(_notifier); } catch { }
     }
 
+    /// <summary>
+    /// IMMNotificationClient callbacks run on the audio service's thread and must not call back into
+    /// the MMDevice API (that deadlocks). So they only hand the event off to the thread pool.
+    /// </summary>
     sealed class Notifier : IMMNotificationClient
     {
         readonly CoreAudio _owner;
         public Notifier(CoreAudio owner) => _owner = owner;
-        public void OnDeviceStateChanged(string deviceId, uint newState) => _owner.Changed?.Invoke();
-        public void OnDeviceAdded(string deviceId) => _owner.Changed?.Invoke();
-        public void OnDeviceRemoved(string deviceId) => _owner.Changed?.Invoke();
+        void Raise() { var o = _owner; Task.Run(() => o.Changed?.Invoke()); }
+        public void OnDeviceStateChanged(string deviceId, uint newState) => Raise();
+        public void OnDeviceAdded(string deviceId) => Raise();
+        public void OnDeviceRemoved(string deviceId) => Raise();
         public void OnDefaultDeviceChanged(EDataFlow flow, ERole role, string? defaultDeviceId)
         {
-            if (flow == EDataFlow.Render) _owner.Changed?.Invoke();
+            if (flow == EDataFlow.Render) Raise();
         }
         public void OnPropertyValueChanged(string deviceId, PropertyKey key) { /* names rarely change; ignore */ }
     }

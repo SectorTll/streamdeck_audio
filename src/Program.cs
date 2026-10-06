@@ -15,6 +15,8 @@ static class Program
         if (args.Length >= 2 && args[0] == "--icons") { WriteIcons(args[1]); return 0; }
         // `AudioKeys.exe --preview <file.png>` renders every glyph in the three states into one sheet (for eyeballing).
         if (args.Length >= 2 && args[0] == "--preview") { WritePreview(args[1]); return 0; }
+        // `AudioKeys.exe --selftest` exercises device switching + volume without Stream Deck and prints what happened.
+        if (args.Length >= 1 && args[0] == "--selftest") return await SelfTest();
 
         int port = 0; string? uuid = null, registerEvent = null;
         for (int i = 0; i + 1 < args.Length; i += 2)
@@ -51,6 +53,56 @@ static class Program
         }
         Log.Info("exit");
         return 0;
+    }
+
+    /// <summary>
+    /// Switches the default device to another active one and back, nudges the volume, and checks that
+    /// every notification arrived and nothing blocked. Output goes to the console (run from a terminal).
+    /// </summary>
+    static async Task<int> SelfTest()
+    {
+        var ok = true;
+        void Say(string line) { Console.WriteLine(line); Log.Info("selftest: " + line); }
+        void Check(bool cond, string what) { Say($"{(cond ? "ok  " : "FAIL")} {what}"); ok &= cond; }
+
+        using var audio = new CoreAudio();
+        using var volume = new VolumeMonitor(audio);
+        int audioEvents = 0, volumeEvents = 0;
+        audio.Changed += () => Interlocked.Increment(ref audioEvents);
+        volume.Changed += () => Interlocked.Increment(ref volumeEvents);
+
+        var snap = audio.Snapshot();
+        var def = snap.ById(snap.DefaultMultimedia);
+        var other = snap.Devices.FirstOrDefault(d => d.IsActive && d.Id != def?.Id);
+        Say($"default: {def?.Name}; other active: {other?.Name ?? "(none)"}; volume {volume.Volume:P0}");
+        Check(def is not null, "default device found");
+        Check(volume.HasDevice, "volume bound");
+
+        if (def is not null && other is not null)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            audio.SetDefault(other.Id, false);
+            await Task.Delay(700);
+            Check(audio.Snapshot().DefaultMultimedia == other.Id, $"switched to {other.Name} in {sw.ElapsedMilliseconds} ms");
+            Check(audioEvents > 0, $"device-change notifications received ({audioEvents})");
+            sw.Restart();
+            audio.SetDefault(def.Id, false);
+            await Task.Delay(700);
+            Check(audio.Snapshot().DefaultMultimedia == def.Id, $"switched back to {def.Name} in {sw.ElapsedMilliseconds} ms");
+        }
+
+        var before = volume.Volume;
+        volumeEvents = 0;
+        var t = Task.Run(() => volume.Adjust(+2));
+        Check(await Task.WhenAny(t, Task.Delay(3000)) == t, "Adjust(+2) returned (no deadlock)");
+        await Task.Delay(400);
+        Check(volumeEvents > 0, $"volume notification received ({volumeEvents}), now {volume.Volume:P0}");
+        volume.Adjust(-2);
+        await Task.Delay(400);
+        Check(Math.Abs(volume.Volume - before) < 0.015f, $"volume restored to {volume.Volume:P0}");
+
+        Say(ok ? "SELFTEST PASSED" : "SELFTEST FAILED");
+        return ok ? 0 : 1;
     }
 
     static void WritePreview(string file)

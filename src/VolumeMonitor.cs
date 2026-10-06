@@ -3,9 +3,12 @@ namespace AudioKeys;
 /// <summary>
 /// Follows the master volume of whatever the default output device is. Re-binds when the default
 /// changes, raises Changed on any volume/mute change (from us, the keyboard, the tray — anything).
+/// All COM work happens on thread-pool threads, never on an audio callback thread.
 /// </summary>
 sealed class VolumeMonitor : IDisposable
 {
+    static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(2);
+
     readonly CoreAudio _audio;
     readonly object _gate = new();
     EndpointVolume? _ep;
@@ -24,24 +27,23 @@ sealed class VolumeMonitor : IDisposable
         Rebind();
     }
 
-    /// <summary>(Re)open the default device's volume interface. Cheap; only re-opens when the device id changed.</summary>
+    /// <summary>(Re)open the default device's volume interface. Only re-opens when the device id changed.</summary>
     public void Rebind()
     {
-        lock (_gate)
+        if (!Monitor.TryEnter(_gate, LockTimeout)) { Log.Warn("rebind: volume lock busy"); return; }
+        try
         {
-            try
-            {
-                var ep = _audio.OpenDefaultVolume();
-                if (ep is null) { Drop(); return; }
-                if (_ep is not null && _ep.DeviceId == ep.DeviceId) { ep.Dispose(); ReadState(); return; }
-                Drop();
-                _ep = ep;
-                _ep.Changed += OnEndpointChanged;
-                ReadState();
-                Log.Info($"volume follows {ep.DeviceId[^14..]}: {Volume:P0}{(Muted ? " muted" : "")}");
-            }
-            catch (Exception ex) { Log.Warn($"volume rebind: {ex.Message}"); Drop(); }
+            var ep = _audio.OpenDefaultVolume();
+            if (ep is null) { Drop(); return; }
+            if (_ep is not null && _ep.DeviceId == ep.DeviceId) { ep.Dispose(); ReadState(); return; }
+            Drop();
+            _ep = ep;
+            _ep.Changed += OnEndpointChanged;
+            ReadState();
+            Log.Info($"volume follows {ep.DeviceId[^14..]}: {Volume:P0}{(Muted ? " muted" : "")}");
         }
+        catch (Exception ex) { Log.Warn($"volume rebind: {ex.Message}"); Drop(); }
+        finally { Monitor.Exit(_gate); }
         Changed?.Invoke();
     }
 
@@ -68,26 +70,34 @@ sealed class VolumeMonitor : IDisposable
         Changed?.Invoke();
     }
 
+    /// <summary>Runs an operation on the bound endpoint under the lock, with a timeout so a stuck COM call can never hang the key handler.</summary>
+    void WithEndpoint(Action<EndpointVolume> op)
+    {
+        if (!Monitor.TryEnter(_gate, LockTimeout)) throw new InvalidOperationException("volume control is busy");
+        try
+        {
+            if (_ep is null) throw new InvalidOperationException("no output device");
+            op(_ep);
+        }
+        finally { Monitor.Exit(_gate); }
+    }
+
     public void Adjust(int percentStep)
     {
         CancelFade();
-        lock (_gate)
+        WithEndpoint(ep =>
         {
-            if (_ep is null) throw new InvalidOperationException("no output device");
-            var v = Math.Clamp(MathF.Round(_ep.Volume * 100f) + percentStep, 0, 100) / 100f;
-            _ep.SetVolume(v);
-            if (_ep.Muted && percentStep > 0) _ep.SetMute(false);   // turning the volume up un-mutes, like the keyboard key does
-        }
+            var v = Math.Clamp(MathF.Round(ep.Volume * 100f) + percentStep, 0, 100) / 100f;
+            ep.SetVolume(v);
+            if (ep.Muted && percentStep > 0) ep.SetMute(false);   // turning the volume up un-mutes, like the keyboard key does
+            Log.Info($"adjust {percentStep:+#;-#;0} -> {v:P0}");
+        });
     }
 
     public void ToggleMute()
     {
         CancelFade();
-        lock (_gate)
-        {
-            if (_ep is null) throw new InvalidOperationException("no output device");
-            _ep.SetMute(!_ep.Muted);
-        }
+        WithEndpoint(ep => ep.SetMute(!ep.Muted));
     }
 
     /// <summary>Set the volume, optionally fading there over fadeMs (steps of 25 ms).</summary>
@@ -95,9 +105,9 @@ sealed class VolumeMonitor : IDisposable
     {
         CancelFade();
         var target = Math.Clamp(percent, 0, 100) / 100f;
-        EndpointVolume? ep;
-        lock (_gate) ep = _ep;
-        if (ep is null) throw new InvalidOperationException("no output device");
+        EndpointVolume? ep = null;
+        WithEndpoint(e => ep = e);
+        if (ep is null) return;
 
         var start = ep.Volume;
         if (fadeMs < 50 || Math.Abs(start - target) < 0.005f)

@@ -1,0 +1,17 @@
+2026-10-06 21:31:34.043 inf volume follows -2b30dd5f2f45}: 42 %
+2026-10-06 21:31:34.060 inf selftest: default: Speakers (Realtek USB Audio); other active: Headphones (ATH-M50xBT2); volume 42 %
+2026-10-06 21:31:34.062 inf selftest: ok   default device found
+2026-10-06 21:31:34.063 inf selftest: ok   volume bound
+2026-10-06 21:31:34.082 inf volume follows -39dc751dc6ee}: 82 %
+2026-10-06 21:31:34.800 inf selftest: ok   switched to Headphones (ATH-M50xBT2) in 734 ms
+2026-10-06 21:31:34.802 inf selftest: ok   device-change notifications received (4)
+2026-10-06 21:31:34.819 inf volume follows -2b30dd5f2f45}: 42 %
+2026-10-06 21:31:35.544 inf selftest: ok   switched back to Speakers (Realtek USB Audio) in 738 ms
+2026-10-06 21:31:35.579 inf adjust +2 -> 44 %
+2026-10-06 21:31:35.580 inf volume 44 %
+2026-10-06 21:31:35.581 inf selftest: ok   Adjust(+2) returned (no deadlock)
+2026-10-06 21:31:35.997 inf selftest: ok   volume notification received (1), now 44 %
+2026-10-06 21:31:36.028 inf volume 42 %
+2026-10-06 21:31:36.030 inf adjust -2 -> 42 %
+2026-10-06 21:31:36.444 inf selftest: ok   volume restored to 42 %
+2026-10-06 21:31:36.445 inf selftest: SELFTEST PASSED
