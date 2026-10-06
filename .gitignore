@@ -1,0 +1,5 @@
+out/
+src/bin/
+src/obj/
+plugin/imgs/*.png
+*.user

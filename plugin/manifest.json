@@ -1,0 +1,29 @@
+{
+  "Name": "Audio Keys",
+  "Version": "0.1.0.0",
+  "Author": "Deniss",
+  "Description": "Output device keys with a status LED: shows whether the device is present and whether it is the default. No polling, no blinking.",
+  "URL": "https://github.com/deniss/StreamDeck-AudioKeys",
+  "Icon": "imgs/plugin",
+  "Category": "Audio Keys",
+  "CategoryIcon": "imgs/category",
+  "CodePathWin": "bin/AudioKeys.exe",
+  "UUID": "com.deniss.audiokeys",
+  "SDKVersion": 2,
+  "Software": { "MinimumVersion": "6.4" },
+  "OS": [ { "Platform": "windows", "MinimumVersion": "10" } ],
+  "Actions": [
+    {
+      "Name": "Output Device",
+      "UUID": "com.deniss.audiokeys.output-device",
+      "Icon": "imgs/action",
+      "Tooltip": "Makes the chosen output device the default. The LED bar shows: selected, present, or absent.",
+      "PropertyInspectorPath": "ui/output-device.html",
+      "Controllers": [ "Keypad" ],
+      "SupportedInMultiActions": true,
+      "DisableAutomaticStates": true,
+      "UserTitleEnabled": true,
+      "States": [ { "Image": "imgs/action", "TitleAlignment": "bottom", "ShowTitle": false } ]
+    }
+  ]
+}
