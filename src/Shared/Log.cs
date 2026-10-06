@@ -1,21 +1,21 @@
-namespace AudioKeys;
+namespace DeckKeys;
 
 /// <summary>Tiny file logger: one line per entry, file next to the plugin in logs/.</summary>
-static class Log
+public static class Log
 {
     static readonly object Gate = new();
     static string? _path;
 
-    public static void Init(string pluginDir)
+    public static void Init(string pluginDir, string name = "plugin")
     {
         try
         {
             var dir = Path.Combine(pluginDir, "logs");
             Directory.CreateDirectory(dir);
-            _path = Path.Combine(dir, "audiokeys.log");
+            _path = Path.Combine(dir, name + ".log");
             // keep the log small: rotate when it grows past 512 KB
             if (File.Exists(_path) && new FileInfo(_path).Length > 512 * 1024)
-                File.Move(_path, Path.Combine(dir, "audiokeys.1.log"), overwrite: true);
+                File.Move(_path, Path.Combine(dir, name + ".1.log"), overwrite: true);
         }
         catch { _path = null; }
     }

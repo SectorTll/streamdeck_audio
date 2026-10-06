@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using Windows.Media.Control;
 
+using DeckKeys;
+
 namespace AudioKeys;
 
 /// <summary>

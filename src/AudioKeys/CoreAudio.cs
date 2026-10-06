@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 
+using DeckKeys;
+
 namespace AudioKeys;
 
 // Minimal Windows Core Audio interop: enumerate render endpoints, watch for changes,

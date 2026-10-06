@@ -1,0 +1,29 @@
+{
+  "Name": "HA Keys",
+  "Version": "0.1.0.0",
+  "Author": "Deniss",
+  "Description": "Home Assistant entity keys with a status LED: on, off, unavailable. One WebSocket connection, event driven, no polling.",
+  "URL": "https://github.com/deniss/StreamDeck-AudioKeys",
+  "Icon": "imgs/plugin",
+  "Category": "HA Keys",
+  "CategoryIcon": "imgs/category",
+  "CodePathWin": "bin/HAKeys.exe",
+  "UUID": "com.deniss.hakeys",
+  "SDKVersion": 2,
+  "Software": { "MinimumVersion": "6.4" },
+  "OS": [ { "Platform": "windows", "MinimumVersion": "10" } ],
+  "Actions": [
+    {
+      "Name": "Entity",
+      "UUID": "com.deniss.hakeys.entity",
+      "Icon": "imgs/action-entity",
+      "Tooltip": "Calls a service on a Home Assistant entity (toggle by default). The LED shows on / off / unavailable.",
+      "PropertyInspectorPath": "ui/entity.html",
+      "Controllers": [ "Keypad" ],
+      "SupportedInMultiActions": true,
+      "DisableAutomaticStates": true,
+      "UserTitleEnabled": true,
+      "States": [ { "Image": "imgs/action-entity", "TitleAlignment": "bottom", "ShowTitle": true } ]
+    }
+  ]
+}

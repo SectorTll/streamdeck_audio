@@ -3,9 +3,9 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Collections.Concurrent;
 
-namespace AudioKeys;
+namespace DeckKeys;
 
-enum KeyState { Active, Inactive, Absent }
+public enum KeyState { Active, Inactive, Absent }
 
 /// <summary>
 /// Draws a 144x144 key: a glyph in the middle and a status LED bar at the top that looks like a
@@ -13,7 +13,7 @@ enum KeyState { Active, Inactive, Absent }
 /// The LED can be fully lit, off, or partially lit from the left (volume meter).
 /// Rendered images are cached as ready-to-send data URIs, so a repeated state costs a dictionary lookup.
 /// </summary>
-static class Renderer
+public static class Renderer
 {
     public const int Size = 144;
     static readonly ConcurrentDictionary<string, string> Cache = new();
@@ -134,12 +134,14 @@ static class Renderer
 }
 
 /// <summary>Glyphs drawn with primitives so they scale to any colour/size and need no image files.</summary>
-static class Glyphs
+public static class Glyphs
 {
     /// <summary>Glyphs the user can pick for a device key.</summary>
     public static readonly string[] DeviceIds = { "headphones", "speaker", "speakers", "monitor", "vr", "headset", "usb", "bluetooth", "none" };
+    /// <summary>Glyphs for Home Assistant entity keys.</summary>
+    public static readonly string[] HomeIds = { "plug", "lamp", "floor", "window", "vr", "fan", "power", "monitor", "none" };
     /// <summary>Everything, for the preview sheet.</summary>
-    public static readonly string[] Ids = { "headphones", "speaker", "speakers", "monitor", "vr", "headset", "usb", "bluetooth", "vol-up", "vol-down", "vol-mute", "vol-set", "play", "pause", "play-pause", "none" };
+    public static readonly string[] Ids = { "headphones", "speaker", "speakers", "monitor", "vr", "headset", "usb", "bluetooth", "vol-up", "vol-down", "vol-mute", "vol-set", "play", "pause", "play-pause", "plug", "lamp", "floor", "window", "fan", "power", "none" };
     static readonly Color Ink = Color.FromArgb(225, 225, 225);
 
     public static void Draw(Graphics g, string id, float dy)
@@ -162,6 +164,12 @@ static class Glyphs
             case "play": Play(g, 72, 86); break;
             case "pause": Pause(g, 72, 86); break;
             case "play-pause": Play(g, 54, 86, 0.8f); Pause(g, 98, 86, 0.8f); break;
+            case "plug": Plug(g); break;
+            case "lamp": Lamp(g); break;
+            case "floor": Floor(g); break;
+            case "window": Window(g); break;
+            case "fan": Fan(g); break;
+            case "power": Power(g); break;
             case "none": break;
             default: Headphones(g); break;
         }
@@ -264,6 +272,79 @@ static class Glyphs
         g.DrawLine(pen, 72, 86, 50, 72); g.FillEllipse(ink, 40, 62, 16, 16);
         g.DrawLine(pen, 72, 100, 94, 84); g.FillRectangle(ink, 92, 70, 16, 16);
         g.FillEllipse(ink, 61, 108, 22, 22);
+    }
+
+    // ---- home glyphs ---------------------------------------------------------------------
+
+    static void Plug(Graphics g)
+    {
+        using var pen = Stroke(7);
+        using var ink = new SolidBrush(Ink);
+        g.DrawLine(pen, 58, 42, 58, 66);   // prongs
+        g.DrawLine(pen, 86, 42, 86, 66);
+        using (var body = Renderer.RoundRect(42, 64, 60, 34, 10)) g.FillPath(ink, body);   // plug body
+        g.FillRectangle(ink, 56, 96, 32, 10);                                              // neck
+        g.DrawLine(pen, 72, 104, 72, 124);                                                 // cord
+    }
+
+    static void Lamp(Graphics g)
+    {
+        using var pen = Stroke(7);
+        using var ink = new SolidBrush(Ink);
+        g.DrawArc(pen, 44, 40, 56, 56, 150, 240);        // bulb
+        g.DrawLine(pen, 56, 92, 56, 108);                // neck sides
+        g.DrawLine(pen, 88, 92, 88, 108);
+        g.DrawLine(pen, 56, 108, 88, 108);
+        g.DrawLine(pen, 60, 120, 84, 120);               // base
+        g.DrawLine(pen, 62, 76, 72, 92); g.DrawLine(pen, 82, 76, 72, 92);   // filament
+    }
+
+    static void Floor(Graphics g)
+    {
+        using var pen = Stroke(7);
+        g.DrawLine(pen, 30, 116, 114, 116);              // floor line
+        foreach (var x in new float[] { 48, 72, 96 })    // heat waves
+        {
+            using var path = new GraphicsPath();
+            path.AddBezier(x, 100, x - 12, 86, x + 12, 70, x, 56);
+            path.AddBezier(x, 56, x - 12, 46, x + 8, 40, x + 2, 36);
+            g.DrawPath(pen, path);
+        }
+    }
+
+    static void Window(Graphics g)
+    {
+        using var pen = Stroke(7);
+        using var frame = Renderer.RoundRect(34, 42, 76, 80, 4);
+        g.DrawPath(pen, frame);
+        g.DrawLine(pen, 72, 42, 72, 122);
+        g.DrawLine(pen, 34, 82, 110, 82);
+    }
+
+    static void Fan(Graphics g)
+    {
+        using var ink = new SolidBrush(Ink);
+        using var black = new SolidBrush(Color.Black);
+        for (int i = 0; i < 3; i++)
+        {
+            g.TranslateTransform(72, 82);
+            g.RotateTransform(i * 120);
+            using var blade = new GraphicsPath();
+            blade.AddBezier(0, -8, 18, -44, 46, -40, 38, -6);
+            blade.AddBezier(38, -6, 24, 4, 10, 6, 0, -8);
+            g.FillPath(ink, blade);
+            g.RotateTransform(-i * 120);
+            g.TranslateTransform(-72, -82);
+        }
+        g.FillEllipse(ink, 60, 70, 24, 24);
+        g.FillEllipse(black, 68, 78, 8, 8);
+    }
+
+    static void Power(Graphics g)
+    {
+        using var pen = Stroke(8);
+        g.DrawArc(pen, 38, 48, 68, 68, -60, 300);
+        g.DrawLine(pen, 72, 40, 72, 80);
     }
 
     static void Bluetooth(Graphics g)

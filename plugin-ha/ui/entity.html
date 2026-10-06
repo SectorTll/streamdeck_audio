@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>HA Keys – Entity</title>
+  <script src="sdpi-components.js"></script>
+  <style>
+    .hint { color: #9a9a9a; font-size: 11px; padding: 2px 0 6px 0; }
+    .section { color: #bdbdbd; font-size: 11px; font-weight: 600; letter-spacing: .04em; padding: 10px 0 2px 0; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+
+  <div class="section">Home Assistant</div>
+  <sdpi-item label="URL">
+    <sdpi-textfield setting="haUrl" global placeholder="http://10.1.1.118:8123"></sdpi-textfield>
+  </sdpi-item>
+  <sdpi-item label="Token">
+    <sdpi-password setting="haToken" global placeholder="long-lived access token"></sdpi-password>
+  </sdpi-item>
+  <div class="hint">Shared by all HA keys. Create the token in Home Assistant: your profile → Security → Long-lived access tokens.</div>
+
+  <div class="section">This key</div>
+  <sdpi-item label="Entity">
+    <sdpi-select setting="entityId" label-setting="entityName" datasource="getEntities" loading="Reading entities…" placeholder="Choose an entity" show-refresh></sdpi-select>
+  </sdpi-item>
+
+  <sdpi-item label="On press">
+    <sdpi-select setting="service" default="toggle">
+      <option value="toggle">Toggle</option>
+      <option value="turn_on">Turn on</option>
+      <option value="turn_off">Turn off</option>
+    </sdpi-select>
+  </sdpi-item>
+
+  <sdpi-item label="Glyph">
+    <sdpi-select setting="glyph" default="plug">
+      <option value="plug">Plug</option>
+      <option value="lamp">Lamp</option>
+      <option value="floor">Floor heating</option>
+      <option value="window">Window</option>
+      <option value="vr">VR headset</option>
+      <option value="fan">Fan</option>
+      <option value="power">Power</option>
+      <option value="monitor">Monitor / TV</option>
+      <option value="none">No glyph</option>
+    </sdpi-select>
+  </sdpi-item>
+
+  <sdpi-item label="LED: on">
+    <sdpi-color setting="colorOn" default="#3ce650"></sdpi-color>
+  </sdpi-item>
+  <sdpi-item label="LED: off">
+    <sdpi-color setting="colorOff" default="#3ce650"></sdpi-color>
+  </sdpi-item>
+  <div class="hint">Off is shown dimmed, like an LED that is not lit.</div>
+  <sdpi-item label="LED: unavailable">
+    <sdpi-color setting="colorUnavailable" default="#ffd200"></sdpi-color>
+  </sdpi-item>
+
+  <sdpi-item label="Options">
+    <sdpi-checkbox setting="showState" default="false" label="Show state text on the key"></sdpi-checkbox>
+  </sdpi-item>
+
+</body>
+</html>

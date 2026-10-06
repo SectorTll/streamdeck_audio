@@ -1,6 +1,8 @@
 using System.Drawing;
 using System.Drawing.Imaging;
 
+using DeckKeys;
+
 namespace AudioKeys;
 
 static class Program
@@ -9,7 +11,7 @@ static class Program
     static async Task<int> Main(string[] args)
     {
         var pluginDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
-        Log.Init(pluginDir);
+        Log.Init(pluginDir, "audiokeys");
 
         // `AudioKeys.exe --icons <dir>` writes the manifest icons using the same renderer, then exits.
         if (args.Length >= 2 && args[0] == "--icons") { WriteIcons(args[1]); return 0; }

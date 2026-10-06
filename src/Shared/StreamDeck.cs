@@ -3,10 +3,10 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace AudioKeys;
+namespace DeckKeys;
 
 /// <summary>WebSocket link to the Stream Deck application. Receives events, sends commands.</summary>
-sealed class StreamDeck : IAsyncDisposable
+public sealed class StreamDeck : IAsyncDisposable
 {
     readonly ClientWebSocket _ws = new();
     readonly SemaphoreSlim _sendGate = new(1, 1);
@@ -73,6 +73,12 @@ sealed class StreamDeck : IAsyncDisposable
 
     public Task SendToPropertyInspector(string context, JsonObject payload) =>
         SendAsync(new JsonObject { ["event"] = "sendToPropertyInspector", ["context"] = context, ["payload"] = payload });
+
+    public Task GetGlobalSettings() =>
+        SendAsync(new JsonObject { ["event"] = "getGlobalSettings", ["context"] = _pluginUuid });
+
+    public Task SetGlobalSettings(JsonObject settings) =>
+        SendAsync(new JsonObject { ["event"] = "setGlobalSettings", ["context"] = _pluginUuid, ["payload"] = settings });
 
     public Task LogMessage(string message) =>
         SendAsync(new JsonObject { ["event"] = "logMessage", ["payload"] = new JsonObject { ["message"] = message } });
