@@ -287,38 +287,57 @@ public static class Glyphs
         g.DrawLine(pen, 72, 104, 72, 124);                                                 // cord
     }
 
+    /// <summary>Small desk lamp: round base, bent arm, cone shade aimed down-left with a fan of light.</summary>
     static void Lamp(Graphics g)
     {
         using var pen = Stroke(7);
+        using var thin = Stroke(4);
         using var ink = new SolidBrush(Ink);
-        g.DrawArc(pen, 44, 40, 56, 56, 150, 240);        // bulb
-        g.DrawLine(pen, 56, 92, 56, 108);                // neck sides
-        g.DrawLine(pen, 88, 92, 88, 108);
-        g.DrawLine(pen, 56, 108, 88, 108);
-        g.DrawLine(pen, 60, 120, 84, 120);               // base
-        g.DrawLine(pen, 62, 76, 72, 92); g.DrawLine(pen, 82, 76, 72, 92);   // filament
+        using (var b = Renderer.RoundRect(66, 112, 50, 10, 5)) g.FillPath(ink, b);          // base
+        using (var arm = new GraphicsPath())
+        {
+            arm.AddBezier(94, 112, 104, 84, 98, 62, 72, 52);                                 // arm up to the shade
+            g.DrawPath(pen, arm);
+        }
+        g.TranslateTransform(62, 58);
+        g.RotateTransform(-38);
+        var cone = new[] { new PointF(-11, -14), new PointF(11, -14), new PointF(24, 14), new PointF(-24, 14) };
+        g.FillPolygon(ink, cone);                                                            // shade (cone, opening down)
+        g.DrawLine(thin, -14, 20, -20, 40);                                                  // light fan
+        g.DrawLine(thin, 0, 20, 0, 42);
+        g.DrawLine(thin, 14, 20, 20, 40);
+        g.ResetTransform();
     }
 
+    /// <summary>LED strip along the baseboard: wall/floor corner, a bright strip at the bottom, light rising up the wall.</summary>
     static void Floor(Graphics g)
     {
         using var pen = Stroke(7);
-        g.DrawLine(pen, 30, 116, 114, 116);              // floor line
-        foreach (var x in new float[] { 48, 72, 96 })    // heat waves
+        using var ink = new SolidBrush(Ink);
+        g.DrawLine(pen, 26, 40, 26, 114);                                                    // wall edge
+        g.DrawLine(pen, 26, 114, 120, 114);                                                  // floor
+        using (var strip = Renderer.RoundRect(34, 100, 80, 9, 4)) g.FillPath(ink, strip);    // the strip
+        for (int i = 0; i < 7; i++)                                                          // light rising up the wall
         {
-            using var path = new GraphicsPath();
-            path.AddBezier(x, 100, x - 12, 86, x + 12, 70, x, 56);
-            path.AddBezier(x, 56, x - 12, 46, x + 8, 40, x + 2, 36);
-            g.DrawPath(pen, path);
+            float x = 40 + i * 11.5f;
+            float h = (i % 2 == 0) ? 22 : 14;
+            using var ray = new Pen(Color.FromArgb(i % 2 == 0 ? 225 : 150, Ink), 3.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.DrawLine(ray, x, 92, x, 92 - h);
         }
     }
 
+    /// <summary>Small floor lamp standing next to a window.</summary>
     static void Window(Graphics g)
     {
-        using var pen = Stroke(7);
-        using var frame = Renderer.RoundRect(34, 42, 76, 80, 4);
-        g.DrawPath(pen, frame);
-        g.DrawLine(pen, 72, 42, 72, 122);
-        g.DrawLine(pen, 34, 82, 110, 82);
+        using var pen = Stroke(6);
+        using var ink = new SolidBrush(Ink);
+        using (var frame = Renderer.RoundRect(30, 40, 50, 60, 3)) g.DrawPath(pen, frame);    // window
+        g.DrawLine(pen, 55, 40, 55, 100);
+        g.DrawLine(pen, 30, 70, 80, 70);
+        g.DrawLine(pen, 104, 70, 104, 118);                                                  // lamp pole
+        using (var b = Renderer.RoundRect(90, 116, 28, 8, 4)) g.FillPath(ink, b);            // base
+        var shade = new[] { new PointF(92, 44), new PointF(116, 44), new PointF(122, 70), new PointF(86, 70) };
+        g.FillPolygon(ink, shade);                                                           // shade
     }
 
     static void Fan(Graphics g)
