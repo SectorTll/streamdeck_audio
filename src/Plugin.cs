@@ -65,6 +65,7 @@ sealed class Plugin
     {
         _sd = sd; _audio = audio;
         _snapshot = _audio.Snapshot();
+        Log.Info($"render endpoints: {_snapshot.Devices.Count} total, {_snapshot.Devices.Count(d => d.IsActive)} active; default = {_snapshot.ById(_snapshot.DefaultMultimedia)?.Name ?? "?"}");
         _audio.Changed += OnAudioChanged;
         _sd.Event += OnEvent;
     }
@@ -242,6 +243,7 @@ sealed class Plugin
         var state = dev is null || !dev.IsActive ? KeyState.Absent
                   : dev.Id == snap.DefaultMultimedia ? KeyState.Active
                   : KeyState.Inactive;
+        if (force) Log.Info($"key {key.Context[..8]}: '{s.DeviceName ?? s.DeviceId ?? "(none)"}' glyph={s.Glyph} state={state}");
 
         string image;
         if (s.DeviceId is null)

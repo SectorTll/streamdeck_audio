@@ -13,6 +13,8 @@ static class Program
 
         // `AudioKeys.exe --icons <dir>` writes the manifest icons using the same renderer, then exits.
         if (args.Length >= 2 && args[0] == "--icons") { WriteIcons(args[1]); return 0; }
+        // `AudioKeys.exe --preview <file.png>` renders every glyph in the three states into one sheet (for eyeballing).
+        if (args.Length >= 2 && args[0] == "--preview") { WritePreview(args[1]); return 0; }
 
         int port = 0; string? uuid = null, registerEvent = null;
         for (int i = 0; i + 1 < args.Length; i += 2)
@@ -46,6 +48,24 @@ static class Program
         }
         Log.Info("exit");
         return 0;
+    }
+
+    static void WritePreview(string file)
+    {
+        const int S = Renderer.Size, pad = 10;
+        var states = new (Color c, bool on)[] { (Color.FromArgb(60, 230, 80), true), (Color.FromArgb(60, 230, 80), false), (Color.FromArgb(255, 210, 0), true) };
+        var glyphs = Glyphs.Ids;
+        using var sheet = new Bitmap(pad + glyphs.Length * (S + pad), pad + states.Length * (S + pad));
+        using var g = Graphics.FromImage(sheet);
+        g.Clear(Color.FromArgb(40, 40, 40));
+        for (int gi = 0; gi < glyphs.Length; gi++)
+            for (int si = 0; si < states.Length; si++)
+            {
+                var uri = Renderer.Render(glyphs[gi], states[si].c, states[si].on, si == 2 ? glyphs[gi] : null);
+                using var key = new Bitmap(new MemoryStream(Convert.FromBase64String(uri[(uri.IndexOf(',') + 1)..])));
+                g.DrawImage(key, pad + gi * (S + pad), pad + si * (S + pad));
+            }
+        sheet.Save(file, ImageFormat.Png);
     }
 
     static void WriteIcons(string dir)

@@ -8,8 +8,12 @@ $root = $PSScriptRoot
 $out = Join-Path $root 'out'
 $target = Join-Path $env:APPDATA 'Elgato\StreamDeck\Plugins\com.deniss.audiokeys.sdPlugin'
 
-Write-Host "== dotnet publish"
-dotnet publish (Join-Path $root 'src\AudioKeys.csproj') -c Release -o $out --nologo -v quiet
+# prefer a user-local SDK (installed with dotnet-install.ps1) when the machine-wide dotnet has no SDK
+$dotnet = 'dotnet'
+if (-not (& dotnet --list-sdks 2>$null) -and (Test-Path "$env:USERPROFILE\.dotnet\dotnet.exe")) { $dotnet = "$env:USERPROFILE\.dotnet\dotnet.exe" }
+
+Write-Host "== dotnet publish ($dotnet)"
+& $dotnet publish (Join-Path $root 'src\AudioKeys.csproj') -c Release -o $out --nologo -v quiet
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
 
 Write-Host "== icons"
