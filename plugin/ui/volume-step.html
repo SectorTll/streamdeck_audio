@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Audio Keys – Volume</title>
+  <script src="sdpi-components.js"></script>
+</head>
+<body>
+
+  <sdpi-item label="Step, %">
+    <sdpi-range setting="step" min="1" max="25" step="1" default="5" showlabels></sdpi-range>
+  </sdpi-item>
+
+  <sdpi-item label="LED: level">
+    <sdpi-color setting="colorLed" default="#3ce650"></sdpi-color>
+  </sdpi-item>
+
+  <sdpi-item label="LED: muted">
+    <sdpi-color setting="colorMuted" default="#ff3b30"></sdpi-color>
+  </sdpi-item>
+
+  <sdpi-item label="Options">
+    <sdpi-checkbox setting="showPercent" default="true" label="Show volume percent on the key"></sdpi-checkbox>
+  </sdpi-item>
+
+</body>
+</html>

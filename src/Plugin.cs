@@ -3,70 +3,76 @@ using System.Text.Json.Nodes;
 
 namespace AudioKeys;
 
-/// <summary>Per-key settings as stored by Stream Deck (camelCase keys, edited by the property inspector).</summary>
-sealed class KeySettings
+static class Actions
 {
-    public string? DeviceId;
-    public string? DeviceName;
-    public string Glyph = "headphones";
-    public string ColorActive = "#3ce650";
-    public string ColorInactive = "#3ce650";
-    public string ColorAbsent = "#ffd200";
-    public string AbsentMode = "led";          // "led" | "hidden"
-    public bool SetCommunications = true;
-    public bool ShowLabel = false;
+    public const string OutputDevice = "com.deniss.audiokeys.output-device";
+    public const string VolumeUp = "com.deniss.audiokeys.volume-up";
+    public const string VolumeDown = "com.deniss.audiokeys.volume-down";
+    public const string VolumeSet = "com.deniss.audiokeys.volume-set";
+    public const string Mute = "com.deniss.audiokeys.mute";
+    public const string PlayPause = "com.deniss.audiokeys.play-pause";
+}
 
-    public static KeySettings From(JsonNode? n)
-    {
-        var s = new KeySettings();
-        if (n is not JsonObject o) return s;
-        s.DeviceId = Str(o, "deviceId");
-        s.DeviceName = Str(o, "deviceName");
-        s.Glyph = Str(o, "glyph") ?? s.Glyph;
-        s.ColorActive = Str(o, "colorActive") ?? s.ColorActive;
-        s.ColorInactive = Str(o, "colorInactive") ?? s.ColorInactive;
-        s.ColorAbsent = Str(o, "colorAbsent") ?? s.ColorAbsent;
-        s.AbsentMode = Str(o, "absentMode") ?? s.AbsentMode;
-        s.SetCommunications = Bool(o, "setCommunications") ?? s.SetCommunications;
-        s.ShowLabel = Bool(o, "showLabel") ?? s.ShowLabel;
-        return s;
-    }
+/// <summary>Typed view over the settings JSON Stream Deck stores per key (edited by the property inspector).</summary>
+sealed class Settings
+{
+    readonly JsonObject _o;
+    public Settings(JsonNode? n) => _o = n as JsonObject ?? new JsonObject();
+    public JsonObject Raw => _o;
 
-    static string? Str(JsonObject o, string k) => o[k] is JsonValue v && v.TryGetValue<string>(out var s) && s.Length > 0 ? s : null;
-    static bool? Bool(JsonObject o, string k)
+    public string? Str(string k) => _o[k] is JsonValue v && v.TryGetValue<string>(out var s) && s.Length > 0 ? s : null;
+    public string Str(string k, string d) => Str(k) ?? d;
+    public bool Bool(string k, bool d)
     {
-        if (o[k] is not JsonValue v) return null;
+        if (_o[k] is not JsonValue v) return d;
         if (v.TryGetValue<bool>(out var b)) return b;
         if (v.TryGetValue<string>(out var s)) return s is "true" or "1" or "on";
-        return null;
+        return d;
     }
+    public int Int(string k, int d)
+    {
+        if (_o[k] is not JsonValue v) return d;
+        if (v.TryGetValue<int>(out var i)) return i;
+        if (v.TryGetValue<double>(out var f)) return (int)Math.Round(f);
+        if (v.TryGetValue<string>(out var s) && int.TryParse(s, out var p)) return p;
+        return d;
+    }
+    public Color Color(string k, Color d) => Renderer.ParseColor(Str(k), d);
 }
 
 sealed class KeyInstance
 {
     public required string Context;
-    public KeySettings Settings = new();
+    public required string Action;
+    public Settings Settings = new(null);
     public string? LastImage;
 }
 
-/// <summary>All plugin behaviour: tracks visible keys, re-renders on audio events, handles presses and the property inspector.</summary>
+/// <summary>All plugin behaviour: tracks visible keys, re-renders on audio/media events, handles presses and the property inspector.</summary>
 sealed class Plugin
 {
-    const string ActionOutputDevice = "com.deniss.audiokeys.output-device";
+    static readonly Color Green = System.Drawing.Color.FromArgb(60, 230, 80);
+    static readonly Color Yellow = System.Drawing.Color.FromArgb(255, 210, 0);
+    static readonly Color Red = System.Drawing.Color.FromArgb(255, 59, 48);
+    static readonly Color Grey = System.Drawing.Color.FromArgb(120, 120, 120);
 
     readonly StreamDeck _sd;
     readonly CoreAudio _audio;
+    readonly VolumeMonitor _volume;
+    readonly MediaMonitor _media;
     readonly Dictionary<string, KeyInstance> _keys = new();
     readonly object _gate = new();
     AudioSnapshot _snapshot;
     CancellationTokenSource? _debounce;
 
-    public Plugin(StreamDeck sd, CoreAudio audio)
+    public Plugin(StreamDeck sd, CoreAudio audio, VolumeMonitor volume, MediaMonitor media)
     {
-        _sd = sd; _audio = audio;
+        _sd = sd; _audio = audio; _volume = volume; _media = media;
         _snapshot = _audio.Snapshot();
         Log.Info($"render endpoints: {_snapshot.Devices.Count} total, {_snapshot.Devices.Count(d => d.IsActive)} active; default = {_snapshot.ById(_snapshot.DefaultMultimedia)?.Name ?? "?"}");
-        _audio.Changed += OnAudioChanged;
+        _audio.Changed += ScheduleRefresh;
+        _volume.Changed += ScheduleRefresh;
+        _media.Changed += ScheduleRefresh;
         _sd.Event += OnEvent;
     }
 
@@ -79,9 +85,9 @@ sealed class Plugin
         switch (ev)
         {
             case "willAppear":
-                if (context is null || action != ActionOutputDevice) return;
+                if (context is null || action is null) return;
                 {
-                    var key = new KeyInstance { Context = context, Settings = KeySettings.From(msg["payload"]?["settings"]) };
+                    var key = new KeyInstance { Context = context, Action = action, Settings = new Settings(msg["payload"]?["settings"]) };
                     lock (_gate) _keys[context] = key;
                     await RenderKey(key, force: true);
                 }
@@ -95,18 +101,17 @@ sealed class Plugin
             case "didReceiveSettings":
                 if (context is null) return;
                 {
-                    KeyInstance? key;
-                    lock (_gate) _keys.TryGetValue(context, out key);
+                    var key = Get(context);
                     if (key is null) return;
-                    key.Settings = KeySettings.From(msg["payload"]?["settings"]);
-                    await ResolveName(key, msg["payload"]?["settings"] as JsonObject);
+                    key.Settings = new Settings(msg["payload"]?["settings"]);
+                    if (key.Action == Actions.OutputDevice) await ResolveName(key);
                     await RenderKey(key, force: false);
                 }
                 break;
 
             case "keyDown":
                 if (context is null) return;
-                await OnKeyDown(context, KeySettings.From(msg["payload"]?["settings"]));
+                await OnKeyDown(context, action, new Settings(msg["payload"]?["settings"]));
                 break;
 
             case "sendToPlugin":
@@ -119,32 +124,63 @@ sealed class Plugin
                 break;
 
             case "systemDidWakeUp":
-                OnAudioChanged();
+                _volume.Rebind();
+                ScheduleRefresh();
                 break;
         }
     }
 
-    async Task OnKeyDown(string context, KeySettings s)
+    KeyInstance? Get(string context)
     {
-        var snap = _snapshot = _audio.Snapshot();
-        var dev = snap.ById(s.DeviceId) ?? snap.ByName(s.DeviceName);
-        if (dev is null || !dev.IsActive)
-        {
-            Log.Info($"press: device not available ({s.DeviceName ?? s.DeviceId})");
-            await _sd.ShowAlert(context);
-            return;
-        }
+        lock (_gate) return _keys.TryGetValue(context, out var k) ? k : null;
+    }
+
+    async Task OnKeyDown(string context, string? action, Settings s)
+    {
         try
         {
-            _audio.SetDefault(dev.Id, s.SetCommunications);
-            Log.Info($"press: default -> {dev.Name}" + (s.SetCommunications ? " (+communications)" : ""));
+            switch (action)
+            {
+                case Actions.OutputDevice:
+                    await PressOutputDevice(context, s);
+                    return;
+                case Actions.VolumeUp:
+                    _volume.Adjust(+Math.Abs(s.Int("step", 5)));
+                    break;
+                case Actions.VolumeDown:
+                    _volume.Adjust(-Math.Abs(s.Int("step", 5)));
+                    break;
+                case Actions.VolumeSet:
+                    _volume.Set(s.Int("target", 0), s.Int("fadeMs", 1000));
+                    break;
+                case Actions.Mute:
+                    _volume.ToggleMute();
+                    break;
+                case Actions.PlayPause:
+                    await _media.PlayPauseAsync();
+                    break;
+            }
         }
         catch (Exception ex)
         {
-            Log.Error($"set default failed: {ex.Message}");
+            Log.Error($"{action}: {ex.Message}");
             await _sd.ShowAlert(context);
         }
-        // the notification callback will re-render; a direct refresh keeps the key snappy if it does not fire
+        ScheduleRefresh();
+    }
+
+    async Task PressOutputDevice(string context, Settings s)
+    {
+        var snap = _snapshot = _audio.Snapshot();
+        var dev = snap.ById(s.Str("deviceId")) ?? snap.ByName(s.Str("deviceName"));
+        if (dev is null || !dev.IsActive)
+        {
+            Log.Info($"press: device not available ({s.Str("deviceName") ?? s.Str("deviceId")})");
+            await _sd.ShowAlert(context);
+            return;
+        }
+        _audio.SetDefault(dev.Id, s.Bool("setCommunications", true));
+        Log.Info($"press: default -> {dev.Name}" + (s.Bool("setCommunications", true) ? " (+communications)" : ""));
         ScheduleRefresh();
     }
 
@@ -154,9 +190,8 @@ sealed class Plugin
         if (ev == "getDevices")
         {
             var snap = _snapshot = _audio.Snapshot();
-            KeyInstance? key;
-            lock (_gate) _keys.TryGetValue(context, out key);
-            var selected = key?.Settings.DeviceId;
+            var key = Get(context);
+            var selected = key?.Settings.Str("deviceId");
 
             var items = new JsonArray();
             foreach (var d in snap.Devices.Where(d => d.IsActive).OrderBy(d => d.Name))
@@ -164,33 +199,25 @@ sealed class Plugin
             // a device that is configured but currently absent still has to be selectable/visible
             if (selected is not null && snap.ById(selected) is { IsActive: false } absent)
                 items.Add(new JsonObject { ["value"] = absent.Id, ["label"] = absent.Name + " (not connected)" });
-            else if (selected is not null && snap.ById(selected) is null && key?.Settings.DeviceName is { } nm)
+            else if (selected is not null && snap.ById(selected) is null && key?.Settings.Str("deviceName") is { } nm)
                 items.Add(new JsonObject { ["value"] = selected, ["label"] = nm + " (not found)" });
 
             await _sd.SendToPropertyInspector(context, new JsonObject { ["event"] = "getDevices", ["items"] = items });
         }
-        else if (ev == "getGlyphs")
-        {
-            var items = new JsonArray();
-            foreach (var g in Glyphs.Ids) items.Add(new JsonObject { ["value"] = g, ["label"] = g });
-            await _sd.SendToPropertyInspector(context, new JsonObject { ["event"] = "getGlyphs", ["items"] = items });
-        }
     }
 
     /// <summary>When the user picks a device in the inspector only deviceId arrives; store its name so we can re-bind after Windows re-enumerates.</summary>
-    async Task ResolveName(KeyInstance key, JsonObject? raw)
+    async Task ResolveName(KeyInstance key)
     {
-        var dev = _snapshot.ById(key.Settings.DeviceId);
-        if (dev is null || dev.Name == key.Settings.DeviceName) return;
-        key.Settings.DeviceName = dev.Name;
-        var updated = raw is null ? new JsonObject() : (JsonObject)raw.DeepClone();
+        var dev = _snapshot.ById(key.Settings.Str("deviceId"));
+        if (dev is null || dev.Name == key.Settings.Str("deviceName")) return;
+        var updated = (JsonObject)key.Settings.Raw.DeepClone();
         updated["deviceName"] = dev.Name;
+        key.Settings = new Settings(updated);
         await _sd.SetSettings(key.Context, updated);
     }
 
-    // ---- audio events → coalesced refresh -----------------------------------------------
-
-    void OnAudioChanged() => ScheduleRefresh();
+    // ---- events → coalesced refresh --------------------------------------------------------
 
     /// <summary>Bluetooth and USB devices fire several events in a row; wait 60 ms and render once.</summary>
     void ScheduleRefresh()
@@ -222,48 +249,86 @@ sealed class Plugin
 
     async Task RenderKey(KeyInstance key, bool force)
     {
+        var image = key.Action switch
+        {
+            Actions.OutputDevice => await RenderOutputDevice(key, force),
+            Actions.VolumeUp => RenderVolume(key, "vol-up"),
+            Actions.VolumeDown => RenderVolume(key, "vol-down"),
+            Actions.VolumeSet => RenderVolume(key, key.Settings.Int("target", 0) == 0 ? "vol-mute" : "vol-set"),
+            Actions.Mute => RenderVolume(key, _volume.Muted ? "vol-mute" : "vol-set"),
+            Actions.PlayPause => RenderPlayPause(key),
+            _ => null,
+        };
+        if (image is null) return;
+        if (force && key.Action != Actions.OutputDevice) Log.Info($"key {key.Context[..8]}: {key.Action[(key.Action.LastIndexOf('.') + 1)..]} appeared");
+        if (!force && ReferenceEquals(image, key.LastImage)) return;   // cached string identity == same picture
+        key.LastImage = image;
+        await _sd.SetImage(key.Context, image);
+    }
+
+    async Task<string> RenderOutputDevice(KeyInstance key, bool log)
+    {
         var s = key.Settings;
         var snap = _snapshot;
-        var dev = snap.ById(s.DeviceId);
+        var deviceId = s.Str("deviceId");
+        var deviceName = s.Str("deviceName");
+        var dev = snap.ById(deviceId);
 
         // Windows re-enumerated the endpoint (new ID, same name): re-bind silently
-        if ((dev is null || !dev.IsActive) && snap.ByName(s.DeviceName) is { } byName && byName.Id != s.DeviceId)
+        if ((dev is null || !dev.IsActive) && snap.ByName(deviceName) is { } byName && byName.Id != deviceId)
         {
-            Log.Info($"re-bound '{s.DeviceName}' to new id {byName.Id}");
-            s.DeviceId = byName.Id;
+            Log.Info($"re-bound '{deviceName}' to new id {byName.Id}");
+            var updated = (JsonObject)s.Raw.DeepClone();
+            updated["deviceId"] = byName.Id;
+            key.Settings = s = new Settings(updated);
             dev = byName;
-            await _sd.SetSettings(key.Context, new JsonObject
-            {
-                ["deviceId"] = s.DeviceId, ["deviceName"] = s.DeviceName, ["glyph"] = s.Glyph,
-                ["colorActive"] = s.ColorActive, ["colorInactive"] = s.ColorInactive, ["colorAbsent"] = s.ColorAbsent,
-                ["absentMode"] = s.AbsentMode, ["setCommunications"] = s.SetCommunications, ["showLabel"] = s.ShowLabel
-            });
+            await _sd.SetSettings(key.Context, updated);
         }
 
         var state = dev is null || !dev.IsActive ? KeyState.Absent
                   : dev.Id == snap.DefaultMultimedia ? KeyState.Active
                   : KeyState.Inactive;
-        if (force) Log.Info($"key {key.Context[..8]}: '{s.DeviceName ?? s.DeviceId ?? "(none)"}' glyph={s.Glyph} state={state}");
+        if (log) Log.Info($"key {key.Context[..8]}: '{deviceName ?? deviceId ?? "(none)"}' glyph={s.Str("glyph", "headphones")} state={state}");
 
-        string image;
-        if (s.DeviceId is null)
-            image = Renderer.Render(s.Glyph, Color.FromArgb(120, 120, 120), false, s.ShowLabel ? "no device" : null);
-        else if (state == KeyState.Absent && s.AbsentMode == "hidden")
-            image = Renderer.Hidden;
-        else
+        var glyph = s.Str("glyph", "headphones");
+        var label = s.Bool("showLabel", false) ? ShortName(dev?.Name ?? deviceName) : null;
+
+        if (deviceId is null)
+            return Renderer.Render(glyph, Grey, false, s.Bool("showLabel", false) ? "no device" : null);
+        if (state == KeyState.Absent && s.Str("absentMode", "led") == "hidden")
+            return Renderer.Hidden;
+
+        var (color, on) = state switch
         {
-            var (color, on) = state switch
-            {
-                KeyState.Active => (Renderer.ParseColor(s.ColorActive, Color.LimeGreen), true),
-                KeyState.Absent => (Renderer.ParseColor(s.ColorAbsent, Color.Gold), true),
-                _ => (Renderer.ParseColor(s.ColorInactive, Color.LimeGreen), false),
-            };
-            image = Renderer.Render(s.Glyph, color, on, s.ShowLabel ? ShortName(dev?.Name ?? s.DeviceName) : null);
-        }
+            KeyState.Active => (s.Color("colorActive", Green), true),
+            KeyState.Absent => (s.Color("colorAbsent", Yellow), true),
+            _ => (s.Color("colorInactive", Green), false),
+        };
+        return Renderer.Render(glyph, color, on, label);
+    }
 
-        if (!force && ReferenceEquals(image, key.LastImage)) return;   // cached string identity == same picture
-        key.LastImage = image;
-        await _sd.SetImage(key.Context, image);
+    /// <summary>Volume keys: the LED is a level meter; red and fully lit while muted.</summary>
+    string RenderVolume(KeyInstance key, string glyph)
+    {
+        var s = key.Settings;
+        var showPercent = s.Bool("showPercent", true);
+        if (!_volume.HasDevice)
+            return Renderer.Render(glyph, Grey, false, showPercent ? "—" : null);
+
+        var percent = (int)MathF.Round(_volume.Volume * 100f);
+        var label = showPercent ? (_volume.Muted ? "muted" : $"{percent}%") : null;
+        if (_volume.Muted)
+            return Renderer.Render(glyph, s.Color("colorMuted", Red), true, label);
+        return Renderer.Render(glyph, s.Color("colorLed", Green), percent > 0, label, percent / 100f);
+    }
+
+    string RenderPlayPause(KeyInstance key)
+    {
+        var s = key.Settings;
+        if (!_media.HasSession) return Renderer.Render("play-pause", Grey, false);
+        return _media.IsPlaying
+            ? Renderer.Render("pause", s.Color("colorPlaying", Green), true)
+            : Renderer.Render("play", s.Color("colorPlaying", Green), false);
     }
 
     static string? ShortName(string? name)

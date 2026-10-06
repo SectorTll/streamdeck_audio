@@ -3,8 +3,8 @@ using System.Runtime.InteropServices;
 namespace AudioKeys;
 
 // Minimal Windows Core Audio interop: enumerate render endpoints, watch for changes,
-// and set the default endpoint (IPolicyConfig, the same undocumented interface every
-// audio switcher on Windows uses).
+// set the default endpoint (IPolicyConfig, the same undocumented interface every audio
+// switcher on Windows uses) and read/write the master volume of an endpoint.
 
 enum EDataFlow { Render = 0, Capture = 1, All = 2 }
 enum ERole { Console = 0, Multimedia = 1, Communications = 2 }
@@ -92,6 +92,35 @@ interface IMMNotificationClient
     void OnPropertyValueChanged([MarshalAs(UnmanagedType.LPWStr)] string deviceId, PropertyKey key);
 }
 
+[ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioEndpointVolume
+{
+    [PreserveSig] int RegisterControlChangeNotify(IAudioEndpointVolumeCallback notify);
+    [PreserveSig] int UnregisterControlChangeNotify(IAudioEndpointVolumeCallback notify);
+    [PreserveSig] int GetChannelCount(out uint count);
+    [PreserveSig] int SetMasterVolumeLevel(float levelDb, IntPtr eventContext);
+    [PreserveSig] int SetMasterVolumeLevelScalar(float level, IntPtr eventContext);
+    [PreserveSig] int GetMasterVolumeLevel(out float levelDb);
+    [PreserveSig] int GetMasterVolumeLevelScalar(out float level);
+    [PreserveSig] int SetChannelVolumeLevel(uint channel, float levelDb, IntPtr eventContext);
+    [PreserveSig] int SetChannelVolumeLevelScalar(uint channel, float level, IntPtr eventContext);
+    [PreserveSig] int GetChannelVolumeLevel(uint channel, out float levelDb);
+    [PreserveSig] int GetChannelVolumeLevelScalar(uint channel, out float level);
+    [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, IntPtr eventContext);
+    [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
+    [PreserveSig] int GetVolumeStepInfo(out uint step, out uint stepCount);
+    [PreserveSig] int VolumeStepUp(IntPtr eventContext);
+    [PreserveSig] int VolumeStepDown(IntPtr eventContext);
+    [PreserveSig] int QueryHardwareSupport(out uint mask);
+    [PreserveSig] int GetVolumeRange(out float minDb, out float maxDb, out float incrementDb);
+}
+
+[ComImport, Guid("657804FA-D6AD-4496-8A60-352752AF4F89"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioEndpointVolumeCallback
+{
+    [PreserveSig] int OnNotify(IntPtr notificationData);   // AUDIO_VOLUME_NOTIFICATION_DATA*
+}
+
 [ComImport, Guid("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9")]
 class PolicyConfigComObject { }
 
@@ -132,6 +161,63 @@ sealed record AudioSnapshot(IReadOnlyList<AudioDevice> Devices, string? DefaultM
     }
 
     static string Norm(string s) => string.Join(' ', s.Split(' ', StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
+}
+
+/// <summary>Master volume of one endpoint with change notifications.</summary>
+sealed class EndpointVolume : IDisposable
+{
+    readonly IAudioEndpointVolume _vol;
+    readonly Callback _cb;
+    public string DeviceId { get; }
+
+    /// <summary>(volume 0..1, muted)</summary>
+    public event Action<float, bool>? Changed;
+
+    public EndpointVolume(IMMDevice device, string id)
+    {
+        DeviceId = id;
+        var iid = typeof(IAudioEndpointVolume).GUID;
+        var hr = device.Activate(ref iid, 0x17 /*CLSCTX_ALL*/, IntPtr.Zero, out var o);
+        if (hr != 0) throw new InvalidOperationException($"Activate(IAudioEndpointVolume) failed: 0x{hr:X8}");
+        _vol = (IAudioEndpointVolume)o;
+        _cb = new Callback(this);
+        _vol.RegisterControlChangeNotify(_cb);
+    }
+
+    public float Volume { get { _vol.GetMasterVolumeLevelScalar(out var v); return v; } }
+    public bool Muted { get { _vol.GetMute(out var m); return m; } }
+
+    public void SetVolume(float v)
+    {
+        var hr = _vol.SetMasterVolumeLevelScalar(Math.Clamp(v, 0f, 1f), IntPtr.Zero);
+        if (hr != 0) throw new InvalidOperationException($"SetMasterVolumeLevelScalar failed: 0x{hr:X8}");
+    }
+
+    public void SetMute(bool mute)
+    {
+        var hr = _vol.SetMute(mute, IntPtr.Zero);
+        if (hr != 0) throw new InvalidOperationException($"SetMute failed: 0x{hr:X8}");
+    }
+
+    public void Dispose()
+    {
+        try { _vol.UnregisterControlChangeNotify(_cb); } catch { }
+        try { Marshal.ReleaseComObject(_vol); } catch { }
+    }
+
+    sealed class Callback : IAudioEndpointVolumeCallback
+    {
+        readonly EndpointVolume _owner;
+        public Callback(EndpointVolume owner) => _owner = owner;
+        public int OnNotify(IntPtr data)
+        {
+            // AUDIO_VOLUME_NOTIFICATION_DATA: GUID guidEventContext; BOOL bMuted; float fMasterVolume; UINT nChannels; float[]
+            var muted = Marshal.ReadInt32(data, 16) != 0;
+            var volume = BitConverter.Int32BitsToSingle(Marshal.ReadInt32(data, 20));
+            _owner.Changed?.Invoke(volume, muted);
+            return 0;
+        }
+    }
 }
 
 /// <summary>Enumerates render endpoints, raises Changed on any audio topology event, sets defaults.</summary>
@@ -182,6 +268,19 @@ sealed class CoreAudio : IDisposable
         if (_enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, role, out var dev) != 0 || dev == null) return null;
         try { dev.GetId(out var id); return id; }
         catch { return null; }
+        finally { Marshal.ReleaseComObject(dev); }
+    }
+
+    /// <summary>Volume control of the current default multimedia render device, or null when there is none.</summary>
+    public EndpointVolume? OpenDefaultVolume()
+    {
+        if (_enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out var dev) != 0 || dev == null) return null;
+        try
+        {
+            dev.GetId(out var id);
+            return new EndpointVolume(dev, id);
+        }
+        catch (Exception ex) { Log.Warn($"open default volume failed: {ex.Message}"); return null; }
         finally { Marshal.ReleaseComObject(dev); }
     }
 

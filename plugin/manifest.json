@@ -1,8 +1,8 @@
 {
   "Name": "Audio Keys",
-  "Version": "0.1.0.0",
+  "Version": "0.2.0.0",
   "Author": "Deniss",
-  "Description": "Output device keys with a status LED: shows whether the device is present and whether it is the default. No polling, no blinking.",
+  "Description": "Output device keys with a status LED, plus volume and play/pause keys whose LED shows the level. Event driven: no polling, no blinking.",
   "URL": "https://github.com/deniss/StreamDeck-AudioKeys",
   "Icon": "imgs/plugin",
   "Category": "Audio Keys",
@@ -16,14 +16,74 @@
     {
       "Name": "Output Device",
       "UUID": "com.deniss.audiokeys.output-device",
-      "Icon": "imgs/action",
+      "Icon": "imgs/action-output",
       "Tooltip": "Makes the chosen output device the default. The LED bar shows: selected, present, or absent.",
       "PropertyInspectorPath": "ui/output-device.html",
       "Controllers": [ "Keypad" ],
       "SupportedInMultiActions": true,
       "DisableAutomaticStates": true,
       "UserTitleEnabled": true,
-      "States": [ { "Image": "imgs/action", "TitleAlignment": "bottom", "ShowTitle": false } ]
+      "States": [ { "Image": "imgs/action-output", "TitleAlignment": "bottom", "ShowTitle": false } ]
+    },
+    {
+      "Name": "Volume Up",
+      "UUID": "com.deniss.audiokeys.volume-up",
+      "Icon": "imgs/action-vol-up",
+      "Tooltip": "Raises the default output volume by a step. The LED bar shows the current level.",
+      "PropertyInspectorPath": "ui/volume-step.html",
+      "Controllers": [ "Keypad" ],
+      "SupportedInMultiActions": true,
+      "DisableAutomaticStates": true,
+      "UserTitleEnabled": true,
+      "States": [ { "Image": "imgs/action-vol-up", "TitleAlignment": "bottom", "ShowTitle": false } ]
+    },
+    {
+      "Name": "Volume Down",
+      "UUID": "com.deniss.audiokeys.volume-down",
+      "Icon": "imgs/action-vol-down",
+      "Tooltip": "Lowers the default output volume by a step. The LED bar shows the current level.",
+      "PropertyInspectorPath": "ui/volume-step.html",
+      "Controllers": [ "Keypad" ],
+      "SupportedInMultiActions": true,
+      "DisableAutomaticStates": true,
+      "UserTitleEnabled": true,
+      "States": [ { "Image": "imgs/action-vol-down", "TitleAlignment": "bottom", "ShowTitle": false } ]
+    },
+    {
+      "Name": "Volume Set",
+      "UUID": "com.deniss.audiokeys.volume-set",
+      "Icon": "imgs/action-vol-set",
+      "Tooltip": "Sets the default output volume to a level, optionally fading to it.",
+      "PropertyInspectorPath": "ui/volume-set.html",
+      "Controllers": [ "Keypad" ],
+      "SupportedInMultiActions": true,
+      "DisableAutomaticStates": true,
+      "UserTitleEnabled": true,
+      "States": [ { "Image": "imgs/action-vol-set", "TitleAlignment": "bottom", "ShowTitle": false } ]
+    },
+    {
+      "Name": "Mute",
+      "UUID": "com.deniss.audiokeys.mute",
+      "Icon": "imgs/action-mute",
+      "Tooltip": "Toggles mute on the default output. The LED turns red while muted.",
+      "PropertyInspectorPath": "ui/volume-step.html",
+      "Controllers": [ "Keypad" ],
+      "SupportedInMultiActions": true,
+      "DisableAutomaticStates": true,
+      "UserTitleEnabled": true,
+      "States": [ { "Image": "imgs/action-mute", "TitleAlignment": "bottom", "ShowTitle": false } ]
+    },
+    {
+      "Name": "Play / Pause",
+      "UUID": "com.deniss.audiokeys.play-pause",
+      "Icon": "imgs/action-play-pause",
+      "Tooltip": "Toggles playback of the current media session. The LED is lit while something is playing.",
+      "PropertyInspectorPath": "ui/play-pause.html",
+      "Controllers": [ "Keypad" ],
+      "SupportedInMultiActions": true,
+      "DisableAutomaticStates": true,
+      "UserTitleEnabled": true,
+      "States": [ { "Image": "imgs/action-play-pause", "TitleAlignment": "bottom", "ShowTitle": false } ]
     }
   ]
 }

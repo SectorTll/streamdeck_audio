@@ -36,9 +36,12 @@ static class Program
         try
         {
             using var audio = new CoreAudio();
+            using var volume = new VolumeMonitor(audio);
+            var media = new MediaMonitor();
+            await media.StartAsync();
             await using var sd = new StreamDeck(port, uuid, registerEvent);
             await sd.ConnectAsync(CancellationToken.None);
-            _ = new Plugin(sd, audio);
+            _ = new Plugin(sd, audio, volume, media);
             await sd.RunAsync(CancellationToken.None);
         }
         catch (Exception ex)
@@ -53,18 +56,26 @@ static class Program
     static void WritePreview(string file)
     {
         const int S = Renderer.Size, pad = 10;
-        var states = new (Color c, bool on)[] { (Color.FromArgb(60, 230, 80), true), (Color.FromArgb(60, 230, 80), false), (Color.FromArgb(255, 210, 0), true) };
         var glyphs = Glyphs.Ids;
-        using var sheet = new Bitmap(pad + glyphs.Length * (S + pad), pad + states.Length * (S + pad));
+        using var sheet = new Bitmap(pad + glyphs.Length * (S + pad), pad + 4 * (S + pad));
         using var g = Graphics.FromImage(sheet);
         g.Clear(Color.FromArgb(40, 40, 40));
+        var green = Color.FromArgb(60, 230, 80); var yellow = Color.FromArgb(255, 210, 0);
         for (int gi = 0; gi < glyphs.Length; gi++)
-            for (int si = 0; si < states.Length; si++)
+        {
+            var rows = new[]
             {
-                var uri = Renderer.Render(glyphs[gi], states[si].c, states[si].on, si == 2 ? glyphs[gi] : null);
-                using var key = new Bitmap(new MemoryStream(Convert.FromBase64String(uri[(uri.IndexOf(',') + 1)..])));
+                Renderer.Render(glyphs[gi], green, true),
+                Renderer.Render(glyphs[gi], green, false),
+                Renderer.Render(glyphs[gi], yellow, true, glyphs[gi]),
+                Renderer.Render(glyphs[gi], green, true, "45%", 0.45f),
+            };
+            for (int si = 0; si < rows.Length; si++)
+            {
+                using var key = new Bitmap(new MemoryStream(Convert.FromBase64String(rows[si][(rows[si].IndexOf(',') + 1)..])));
                 g.DrawImage(key, pad + gi * (S + pad), pad + si * (S + pad));
             }
+        }
         sheet.Save(file, ImageFormat.Png);
     }
 
@@ -72,18 +83,26 @@ static class Program
     {
         Directory.CreateDirectory(dir);
         var green = Color.FromArgb(60, 230, 80);
-        Save(Path.Combine(dir, "action@2x.png"), 144, green);
-        Save(Path.Combine(dir, "action.png"), 72, green);
-        Save(Path.Combine(dir, "plugin@2x.png"), 144, green);
-        Save(Path.Combine(dir, "plugin.png"), 72, green);
-        Save(Path.Combine(dir, "category@2x.png"), 56, green);
-        Save(Path.Combine(dir, "category.png"), 28, green);
+        Icon(dir, "plugin", "headphones", green, true, 1f);
+        Icon(dir, "category", "headphones", green, true, 1f, 28);
+        Icon(dir, "action-output", "headphones", green, true, 1f);
+        Icon(dir, "action-vol-up", "vol-up", green, true, 0.7f);
+        Icon(dir, "action-vol-down", "vol-down", green, true, 0.3f);
+        Icon(dir, "action-vol-set", "vol-set", green, true, 0.5f);
+        Icon(dir, "action-mute", "vol-mute", Color.FromArgb(255, 59, 48), true, 1f);
+        Icon(dir, "action-play-pause", "play-pause", green, true, 1f);
 
-        static void Save(string path, int size, Color led)
+        static void Icon(string dir, string name, string glyph, Color led, bool on, float fill, int size = 72)
         {
-            var uri = Renderer.Render("headphones", led, true);
+            var uri = Renderer.Render(glyph, led, on, null, fill);
             var bytes = Convert.FromBase64String(uri[(uri.IndexOf(',') + 1)..]);
             using var src = new Bitmap(new MemoryStream(bytes));
+            Save(Path.Combine(dir, name + "@2x.png"), src, size * 2);
+            Save(Path.Combine(dir, name + ".png"), src, size);
+        }
+
+        static void Save(string path, Bitmap src, int size)
+        {
             using var dst = new Bitmap(size, size);
             using (var g = Graphics.FromImage(dst))
             {

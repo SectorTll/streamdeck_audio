@@ -10,6 +10,7 @@ enum KeyState { Active, Inactive, Absent }
 /// <summary>
 /// Draws a 144x144 key: a glyph in the middle and a status LED bar at the top that looks like a
 /// real LED behind frosted glass (bright core, dark ends, slightly soft edges, no outer glow).
+/// The LED can be fully lit, off, or partially lit from the left (volume meter).
 /// Rendered images are cached as ready-to-send data URIs, so a repeated state costs a dictionary lookup.
 /// </summary>
 static class Renderer
@@ -18,10 +19,12 @@ static class Renderer
     static readonly ConcurrentDictionary<string, string> Cache = new();
     public static readonly string Hidden = Encode(RenderBlank());
 
-    public static string Render(string glyph, Color led, bool ledOn, string? label = null)
+    /// <param name="fill">lit fraction of the LED bar, 0..1 (only when ledOn)</param>
+    public static string Render(string glyph, Color led, bool ledOn, string? label = null, float fill = 1f)
     {
-        var key = $"{glyph}|{led.ToArgb():X8}|{(ledOn ? 1 : 0)}|{label}";
-        return Cache.GetOrAdd(key, _ => Encode(Draw(glyph, led, ledOn, label)));
+        fill = ledOn ? MathF.Round(Math.Clamp(fill, 0f, 1f), 2) : 0f;
+        var key = $"{glyph}|{led.ToArgb():X8}|{(ledOn ? 1 : 0)}|{fill}|{label}";
+        return Cache.GetOrAdd(key, _ => Encode(Draw(glyph, led, ledOn, label, fill)));
     }
 
     public static Color ParseColor(string? hex, Color fallback)
@@ -48,7 +51,7 @@ static class Renderer
         return bmp;
     }
 
-    static Bitmap Draw(string glyph, Color led, bool ledOn, string? label)
+    static Bitmap Draw(string glyph, Color led, bool ledOn, string? label, float fill)
     {
         var bmp = new Bitmap(Size, Size);
         using var g = Graphics.FromImage(bmp);
@@ -56,7 +59,18 @@ static class Renderer
         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
         g.Clear(Color.Black);
         Glyphs.Draw(g, glyph, label is null ? 0 : -8);
-        DrawLed(g, led, ledOn);
+        if (!ledOn || fill >= 1f) DrawLed(g, led, ledOn);
+        else
+        {
+            DrawLed(g, led, false);                       // the whole bar, dark
+            if (fill > 0f)
+            {
+                var litWidth = 92f * fill;
+                g.SetClip(new RectangleF(26 - 4, 0, litWidth + 4, 40));
+                DrawLed(g, led, true);                    // the lit part, clipped from the left
+                g.ResetClip();
+            }
+        }
         if (label is not null) DrawLabel(g, label);
         return bmp;
     }
@@ -92,11 +106,11 @@ static class Renderer
 
     static void DrawLabel(Graphics g, string text)
     {
-        using var f = new Font("Segoe UI", 14, FontStyle.Bold, GraphicsUnit.Pixel);
-        using var b = new SolidBrush(Color.FromArgb(200, 200, 200));
+        using var f = new Font("Segoe UI", 16, FontStyle.Bold, GraphicsUnit.Pixel);
+        using var b = new SolidBrush(Color.FromArgb(205, 205, 205));
         var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Far, Trimming = StringTrimming.EllipsisCharacter };
         fmt.FormatFlags |= StringFormatFlags.NoWrap;
-        g.DrawString(text, f, b, new RectangleF(4, Size - 26, Size - 8, 22), fmt);
+        g.DrawString(text, f, b, new RectangleF(4, Size - 28, Size - 8, 24), fmt);
     }
 
     static Color Mix(Color c, double f, int a = 255) =>
@@ -122,7 +136,10 @@ static class Renderer
 /// <summary>Glyphs drawn with primitives so they scale to any colour/size and need no image files.</summary>
 static class Glyphs
 {
-    public static readonly string[] Ids = { "headphones", "speaker", "speakers", "monitor", "vr", "headset", "usb", "bluetooth", "none" };
+    /// <summary>Glyphs the user can pick for a device key.</summary>
+    public static readonly string[] DeviceIds = { "headphones", "speaker", "speakers", "monitor", "vr", "headset", "usb", "bluetooth", "none" };
+    /// <summary>Everything, for the preview sheet.</summary>
+    public static readonly string[] Ids = { "headphones", "speaker", "speakers", "monitor", "vr", "headset", "usb", "bluetooth", "vol-up", "vol-down", "vol-mute", "vol-set", "play", "pause", "play-pause", "none" };
     static readonly Color Ink = Color.FromArgb(225, 225, 225);
 
     public static void Draw(Graphics g, string id, float dy)
@@ -138,6 +155,13 @@ static class Glyphs
             case "headset": Headphones(g); Mic(g); break;
             case "usb": Usb(g); break;
             case "bluetooth": Bluetooth(g); break;
+            case "vol-up": SpeakerBody(g, 56, 86); Waves(g, 56, 86, 3); break;
+            case "vol-down": SpeakerBody(g, 60, 86); Waves(g, 60, 86, 1); break;
+            case "vol-mute": SpeakerBody(g, 56, 86); Cross(g, 96, 86); break;
+            case "vol-set": SpeakerBody(g, 56, 86); Waves(g, 56, 86, 2); break;
+            case "play": Play(g, 72, 86); break;
+            case "pause": Pause(g, 72, 86); break;
+            case "play-pause": Play(g, 54, 86, 0.8f); Pause(g, 98, 86, 0.8f); break;
             case "none": break;
             default: Headphones(g); break;
         }
@@ -165,22 +189,53 @@ static class Glyphs
         g.DrawLine(pen, 72, 124, 86, 124);          // boom tip
     }
 
-    static void Speaker(Graphics g, float cx, float cy, float s = 1f)
+    /// <summary>Speaker body (box + cone) centred around (cx, cy); the cone's right edge is at cx+12.</summary>
+    static void SpeakerBody(Graphics g, float cx, float cy, float s = 1f)
     {
-        using var pen = Stroke(7 * s);
         using var ink = new SolidBrush(Ink);
         var w = 20 * s; var h = 26 * s;
         using (var body = Renderer.RoundRect(cx - 26 * s, cy - h / 2, w, h, 3 * s)) g.FillPath(ink, body);
         var cone = new[] { new PointF(cx - 6 * s, cy - h / 2), new PointF(cx + 12 * s, cy - 28 * s), new PointF(cx + 12 * s, cy + 28 * s), new PointF(cx - 6 * s, cy + h / 2) };
         g.FillPolygon(ink, cone);
-        g.DrawArc(pen, cx + 10 * s, cy - 22 * s, 32 * s, 44 * s, -55, 110);
-        if (s >= 1f) g.DrawArc(pen, cx + 14 * s, cy - 36 * s, 50 * s, 72 * s, -50, 100);
+    }
+
+    static void Waves(Graphics g, float cx, float cy, int count, float s = 1f)
+    {
+        using var pen = Stroke(7 * s);
+        if (count >= 1) g.DrawArc(pen, cx + 10 * s, cy - 22 * s, 32 * s, 44 * s, -55, 110);
+        if (count >= 2) g.DrawArc(pen, cx + 14 * s, cy - 36 * s, 50 * s, 72 * s, -50, 100);
+        if (count >= 3) g.DrawArc(pen, cx + 18 * s, cy - 50 * s, 68 * s, 100 * s, -45, 90);
+    }
+
+    static void Speaker(Graphics g, float cx, float cy, float s = 1f)
+    {
+        SpeakerBody(g, cx, cy, s);
+        Waves(g, cx, cy, s >= 1f ? 2 : 1, s);
+    }
+
+    static void Cross(Graphics g, float cx, float cy)
+    {
+        using var pen = Stroke(8);
+        g.DrawLine(pen, cx - 14, cy - 14, cx + 14, cy + 14);
+        g.DrawLine(pen, cx + 14, cy - 14, cx - 14, cy + 14);
+    }
+
+    static void Play(Graphics g, float cx, float cy, float s = 1f)
+    {
+        using var ink = new SolidBrush(Ink);
+        g.FillPolygon(ink, new[] { new PointF(cx - 22 * s, cy - 30 * s), new PointF(cx + 28 * s, cy), new PointF(cx - 22 * s, cy + 30 * s) });
+    }
+
+    static void Pause(Graphics g, float cx, float cy, float s = 1f)
+    {
+        using var ink = new SolidBrush(Ink);
+        using (var l = Renderer.RoundRect(cx - 24 * s, cy - 30 * s, 18 * s, 60 * s, 4 * s)) g.FillPath(ink, l);
+        using (var r = Renderer.RoundRect(cx + 6 * s, cy - 30 * s, 18 * s, 60 * s, 4 * s)) g.FillPath(ink, r);
     }
 
     static void Monitor(Graphics g)
     {
         using var pen = Stroke(7);
-        using var ink = new SolidBrush(Ink);
         using var frame = Renderer.RoundRect(30, 48, 84, 56, 6);
         g.DrawPath(pen, frame);
         g.DrawLine(pen, 72, 104, 72, 118);
@@ -193,9 +248,9 @@ static class Glyphs
         using var ink = new SolidBrush(Ink);
         using var black = new SolidBrush(Color.Black);
         using (var body = Renderer.RoundRect(26, 60, 92, 50, 14)) g.FillPath(ink, body);
-        g.FillEllipse(black, 42, 74, 22, 22);
-        g.FillEllipse(black, 80, 74, 22, 22);
-        g.FillEllipse(black, 60, 92, 24, 26); // nose cut-out
+        g.FillEllipse(black, 40, 72, 24, 24);
+        g.FillEllipse(black, 80, 72, 24, 24);
+        g.FillEllipse(black, 60, 98, 24, 24); // nose cut-out at the bottom edge
         g.DrawLine(pen, 30, 70, 20, 90);
         g.DrawLine(pen, 114, 70, 124, 90);
     }
