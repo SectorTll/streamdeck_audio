@@ -256,7 +256,7 @@ sealed class Plugin
             Actions.VolumeUp => RenderVolume(key, "vol-up"),
             Actions.VolumeDown => RenderVolume(key, "vol-down"),
             Actions.VolumeSet => RenderVolume(key, key.Settings.Int("target", 0) == 0 ? "vol-mute" : "vol-set"),
-            Actions.Mute => RenderVolume(key, _volume.Muted ? "vol-mute" : "vol-set"),
+            Actions.Mute => RenderMute(key),
             Actions.PlayPause => RenderPlayPause(key),
             _ => null,
         };
@@ -321,6 +321,19 @@ sealed class Plugin
         if (_volume.Muted)
             return Renderer.Render(glyph, s.Color("colorMuted", Red), true, label);
         return Renderer.Render(glyph, s.Color("colorLed", Green), percent > 0, label, percent / 100f);
+    }
+
+    /// <summary>Mute key: red bar while muted, green bar while sound is on. No level meter, no percent unless asked.</summary>
+    string RenderMute(KeyInstance key)
+    {
+        var s = key.Settings;
+        var showPercent = s.Bool("showPercent", false);
+        if (!_volume.HasDevice)
+            return Renderer.Render("vol-mute", Grey, false, showPercent ? "—" : null);
+        if (_volume.Muted)
+            return Renderer.Render("vol-mute", s.Color("colorMuted", Red), true, showPercent ? "muted" : null);
+        var percent = (int)MathF.Round(_volume.Volume * 100f);
+        return Renderer.Render("speaker", s.Color("colorLed", Green), true, showPercent ? $"{percent}%" : null);
     }
 
     string RenderPlayPause(KeyInstance key)
