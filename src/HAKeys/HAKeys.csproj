@@ -20,4 +20,8 @@
     <Compile Include="..\Shared\*.cs" Link="Shared\%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
 </Project>

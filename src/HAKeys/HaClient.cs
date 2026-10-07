@@ -50,7 +50,7 @@ public sealed class HaClient : IAsyncDisposable
             _loop?.Cancel();
             _loop = null;
             Connected = false;
-            if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(token)) { LastError = "not configured"; Changed?.Invoke(null); return; }
+            if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(token)) { LastError = "not configured"; Log.Warn("HA: not configured (no url/token)"); Changed?.Invoke(null); return; }
             _loop = new CancellationTokenSource();
             var ct = _loop.Token;
             _ = Task.Run(() => RunLoop(url, token, ct), ct);

@@ -38,7 +38,16 @@ sealed class Plugin
         _sd.Event += OnEvent;
     }
 
-    public Task Start() => _sd.GetGlobalSettings();
+    ConfigStore.Config? _file;
+
+    /// <summary>Connect from our own config copy right away, then ask Stream Deck for its global settings.</summary>
+    public Task Start()
+    {
+        _file = ConfigStore.Load();
+        if (!string.IsNullOrEmpty(_file?.Token))
+            _ha.Configure(_file!.Url ?? DefaultUrl, _file.Token);
+        return _sd.GetGlobalSettings();
+    }
 
     async Task OnEvent(string ev, JsonNode msg)
     {
@@ -48,14 +57,33 @@ sealed class Plugin
             case "didReceiveGlobalSettings":
             {
                 var g = new Settings(msg["payload"]?["settings"]);
-                if (g.Str("haUrl") is null)
+                var url = g.Str("haUrl"); var token = g.Str("haToken");
+                Log.Info($"global settings: url={(url ?? "-")}, token={(token is null ? "no" : "yes")}");
+                if (token is not null)
                 {
-                    // first run: pre-fill the server address so only the token has to be typed
-                    var init = (JsonObject)g.Raw.DeepClone();
-                    init["haUrl"] = DefaultUrl;
-                    await _sd.SetGlobalSettings(init);
+                    // Stream Deck has the values: use them and keep our own copy current
+                    if (url != _file?.Url || token != _file?.Token) { ConfigStore.Save(url ?? DefaultUrl, token); _file = new ConfigStore.Config(url ?? DefaultUrl, token); }
+                    _ha.Configure(url ?? DefaultUrl, token);
                 }
-                _ha.Configure(g.Str("haUrl", DefaultUrl), g.Str("haToken"));
+                else if (!string.IsNullOrEmpty(_file?.Token))
+                {
+                    // Stream Deck lost them (seen after reboots): re-seed its store from our copy so the inspector shows them
+                    var seed = (JsonObject)g.Raw.DeepClone();
+                    seed["haUrl"] = _file!.Url ?? DefaultUrl; seed["haToken"] = _file.Token;
+                    await _sd.SetGlobalSettings(seed);
+                    _ha.Configure(_file.Url ?? DefaultUrl, _file.Token);
+                }
+                else
+                {
+                    if (url is null)
+                    {
+                        // first run: pre-fill the server address so only the token has to be typed
+                        var init = (JsonObject)g.Raw.DeepClone();
+                        init["haUrl"] = DefaultUrl;
+                        await _sd.SetGlobalSettings(init);
+                    }
+                    _ha.Configure(url ?? DefaultUrl, null);
+                }
                 break;
             }
             case "willAppear":
