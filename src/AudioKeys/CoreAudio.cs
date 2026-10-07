@@ -244,10 +244,10 @@ sealed class CoreAudio : IDisposable
         if (hr != 0) Log.Warn($"RegisterEndpointNotificationCallback failed: 0x{hr:X8}");
     }
 
-    public AudioSnapshot Snapshot()
+    public AudioSnapshot Snapshot(EDataFlow flow = EDataFlow.Render)
     {
         var list = new List<AudioDevice>();
-        if (_enumerator.EnumAudioEndpoints(EDataFlow.Render, DeviceState.All, out var coll) == 0 && coll != null)
+        if (_enumerator.EnumAudioEndpoints(flow, DeviceState.All, out var coll) == 0 && coll != null)
         {
             coll.GetCount(out var n);
             for (uint i = 0; i < n; i++)
@@ -264,12 +264,12 @@ sealed class CoreAudio : IDisposable
             }
             Marshal.ReleaseComObject(coll);
         }
-        return new AudioSnapshot(list, DefaultId(ERole.Multimedia), DefaultId(ERole.Communications));
+        return new AudioSnapshot(list, DefaultId(flow, ERole.Multimedia), DefaultId(flow, ERole.Communications));
     }
 
-    string? DefaultId(ERole role)
+    string? DefaultId(EDataFlow flow, ERole role)
     {
-        if (_enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, role, out var dev) != 0 || dev == null) return null;
+        if (_enumerator.GetDefaultAudioEndpoint(flow, role, out var dev) != 0 || dev == null) return null;
         try { dev.GetId(out var id); return id; }
         catch { return null; }
         finally { Marshal.ReleaseComObject(dev); }
@@ -343,10 +343,7 @@ sealed class CoreAudio : IDisposable
         public void OnDeviceStateChanged(string deviceId, uint newState) => Raise();
         public void OnDeviceAdded(string deviceId) => Raise();
         public void OnDeviceRemoved(string deviceId) => Raise();
-        public void OnDefaultDeviceChanged(EDataFlow flow, ERole role, string? defaultDeviceId)
-        {
-            if (flow == EDataFlow.Render) Raise();
-        }
+        public void OnDefaultDeviceChanged(EDataFlow flow, ERole role, string? defaultDeviceId) => Raise();   // render and capture
         public void OnPropertyValueChanged(string deviceId, PropertyKey key) { /* names rarely change; ignore */ }
     }
 }

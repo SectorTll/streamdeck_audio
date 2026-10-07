@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Audio Keys – Input Device</title>
+  <script src="sdpi-components.js"></script>
+  <style>
+    .hint { color: #9a9a9a; font-size: 11px; padding: 2px 0 6px 0; }
+  </style>
+</head>
+<body>
+
+  <sdpi-item label="Microphone">
+    <sdpi-select setting="deviceId" label-setting="deviceName" datasource="getInputDevices" loading="Reading devices…" placeholder="Choose an input device" show-refresh></sdpi-select>
+  </sdpi-item>
+
+  <sdpi-item label="Glyph">
+    <sdpi-select setting="glyph" default="mic">
+      <option value="mic">Microphone</option>
+      <option value="mic-desk">Desk / USB mic</option>
+      <option value="headset">Headset</option>
+      <option value="webcam">Webcam</option>
+      <option value="vr">VR headset</option>
+      <option value="usb">USB</option>
+      <option value="bluetooth">Bluetooth</option>
+      <option value="none">No glyph</option>
+    </sdpi-select>
+  </sdpi-item>
+
+  <sdpi-item label="LED: selected">
+    <sdpi-color setting="colorActive" default="#3ce650"></sdpi-color>
+  </sdpi-item>
+
+  <sdpi-item label="LED: present">
+    <sdpi-color setting="colorInactive" default="#3ce650"></sdpi-color>
+  </sdpi-item>
+  <div class="hint">Device is connected but not the default. Shown dimmed, like an LED that is off.</div>
+
+  <sdpi-item label="Absent device">
+    <sdpi-select setting="absentMode" default="led">
+      <option value="led">Show LED in a colour</option>
+      <option value="hidden">Hide the key (black)</option>
+    </sdpi-select>
+  </sdpi-item>
+
+  <sdpi-item label="LED: absent">
+    <sdpi-color setting="colorAbsent" default="#ffd200"></sdpi-color>
+  </sdpi-item>
+
+  <sdpi-item label="Options">
+    <sdpi-checkbox setting="setCommunications" default="true" label="Also set as communications device"></sdpi-checkbox>
+  </sdpi-item>
+  <sdpi-item label="">
+    <sdpi-checkbox setting="showLabel" default="false" label="Show device name on the key"></sdpi-checkbox>
+  </sdpi-item>
+
+</body>
+</html>

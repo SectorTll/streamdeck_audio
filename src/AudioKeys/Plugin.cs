@@ -7,6 +7,7 @@ namespace AudioKeys;
 static class Actions
 {
     public const string OutputDevice = "com.deniss.audiokeys.output-device";
+    public const string InputDevice = "com.deniss.audiokeys.input-device";
     public const string VolumeUp = "com.deniss.audiokeys.volume-up";
     public const string VolumeDown = "com.deniss.audiokeys.volume-down";
     public const string VolumeSet = "com.deniss.audiokeys.volume-set";
@@ -36,14 +37,17 @@ sealed class Plugin
     readonly MediaMonitor _media;
     readonly Dictionary<string, KeyInstance> _keys = new();
     readonly object _gate = new();
-    AudioSnapshot _snapshot;
+    AudioSnapshot _snapshot;      // render endpoints
+    AudioSnapshot _inputs;        // capture endpoints
     CancellationTokenSource? _debounce;
 
     public Plugin(StreamDeck sd, CoreAudio audio, VolumeMonitor volume, MediaMonitor media)
     {
         _sd = sd; _audio = audio; _volume = volume; _media = media;
-        _snapshot = _audio.Snapshot();
+        _snapshot = _audio.Snapshot(EDataFlow.Render);
+        _inputs = _audio.Snapshot(EDataFlow.Capture);
         Log.Info($"render endpoints: {_snapshot.Devices.Count} total, {_snapshot.Devices.Count(d => d.IsActive)} active; default = {_snapshot.ById(_snapshot.DefaultMultimedia)?.Name ?? "?"}");
+        Log.Info($"capture endpoints: {_inputs.Devices.Count} total, {_inputs.Devices.Count(d => d.IsActive)} active; default = {_inputs.ById(_inputs.DefaultMultimedia)?.Name ?? "?"}");
         _audio.Changed += ScheduleRefresh;
         _volume.Changed += ScheduleRefresh;
         _media.Changed += ScheduleRefresh;
@@ -78,7 +82,7 @@ sealed class Plugin
                     var key = Get(context);
                     if (key is null) return;
                     key.Settings = new Settings(msg["payload"]?["settings"]);
-                    if (key.Action == Actions.OutputDevice) await ResolveName(key);
+                    if (key.Action is Actions.OutputDevice or Actions.InputDevice) await ResolveName(key);
                     await RenderKey(key, force: false);
                 }
                 break;
@@ -94,7 +98,8 @@ sealed class Plugin
                 break;
 
             case "propertyInspectorDidAppear":
-                _snapshot = _audio.Snapshot();   // fresh list for the dropdown
+                _snapshot = _audio.Snapshot(EDataFlow.Render);   // fresh lists for the dropdowns
+                _inputs = _audio.Snapshot(EDataFlow.Capture);
                 break;
 
             case "systemDidWakeUp":
@@ -117,7 +122,10 @@ sealed class Plugin
             switch (action)
             {
                 case Actions.OutputDevice:
-                    await PressOutputDevice(context, s);
+                    await PressDevice(context, s, EDataFlow.Render);
+                    return;
+                case Actions.InputDevice:
+                    await PressDevice(context, s, EDataFlow.Capture);
                     return;
                 case Actions.VolumeUp:
                     _volume.Adjust(+Math.Abs(s.Int("step", 5)));
@@ -144,9 +152,13 @@ sealed class Plugin
         ScheduleRefresh();
     }
 
-    async Task PressOutputDevice(string context, Settings s)
+    static EDataFlow FlowOf(string action) => action == Actions.InputDevice ? EDataFlow.Capture : EDataFlow.Render;
+    AudioSnapshot SnapshotFor(EDataFlow flow) => flow == EDataFlow.Capture ? _inputs : _snapshot;
+    AudioSnapshot Refresh(EDataFlow flow) => flow == EDataFlow.Capture ? (_inputs = _audio.Snapshot(flow)) : (_snapshot = _audio.Snapshot(flow));
+
+    async Task PressDevice(string context, Settings s, EDataFlow flow)
     {
-        var snap = _snapshot = _audio.Snapshot();
+        var snap = Refresh(flow);
         var dev = snap.ById(s.Str("deviceId")) ?? snap.ByName(s.Str("deviceName"));
         if (dev is null || !dev.IsActive)
         {
@@ -155,16 +167,16 @@ sealed class Plugin
             return;
         }
         _audio.SetDefault(dev.Id, s.Bool("setCommunications", true));
-        Log.Info($"press: default -> {dev.Name}" + (s.Bool("setCommunications", true) ? " (+communications)" : ""));
+        Log.Info($"press: default {(flow == EDataFlow.Capture ? "input" : "output")} -> {dev.Name}" + (s.Bool("setCommunications", true) ? " (+communications)" : ""));
         ScheduleRefresh();
     }
 
     async Task OnSendToPlugin(string context, JsonObject? payload)
     {
         var ev = payload?["event"]?.GetValue<string>();
-        if (ev == "getDevices")
+        if (ev is "getDevices" or "getInputDevices")
         {
-            var snap = _snapshot = _audio.Snapshot();
+            var snap = Refresh(ev == "getInputDevices" ? EDataFlow.Capture : EDataFlow.Render);
             var key = Get(context);
             var selected = key?.Settings.Str("deviceId");
 
@@ -177,14 +189,14 @@ sealed class Plugin
             else if (selected is not null && snap.ById(selected) is null && key?.Settings.Str("deviceName") is { } nm)
                 items.Add(new JsonObject { ["value"] = selected, ["label"] = nm + " (not found)" });
 
-            await _sd.SendToPropertyInspector(context, new JsonObject { ["event"] = "getDevices", ["items"] = items });
+            await _sd.SendToPropertyInspector(context, new JsonObject { ["event"] = ev, ["items"] = items });
         }
     }
 
     /// <summary>When the user picks a device in the inspector only deviceId arrives; store its name so we can re-bind after Windows re-enumerates.</summary>
     async Task ResolveName(KeyInstance key)
     {
-        var dev = _snapshot.ById(key.Settings.Str("deviceId"));
+        var dev = SnapshotFor(FlowOf(key.Action)).ById(key.Settings.Str("deviceId"));
         if (dev is null || dev.Name == key.Settings.Str("deviceName")) return;
         var updated = (JsonObject)key.Settings.Raw.DeepClone();
         updated["deviceName"] = dev.Name;
@@ -214,7 +226,8 @@ sealed class Plugin
 
     async Task RefreshAll()
     {
-        _snapshot = _audio.Snapshot();
+        _snapshot = _audio.Snapshot(EDataFlow.Render);
+        _inputs = _audio.Snapshot(EDataFlow.Capture);
         List<KeyInstance> keys;
         lock (_gate) keys = _keys.Values.ToList();
         foreach (var k in keys) await RenderKey(k, force: false);
@@ -226,7 +239,8 @@ sealed class Plugin
     {
         var image = key.Action switch
         {
-            Actions.OutputDevice => await RenderOutputDevice(key, force),
+            Actions.OutputDevice => await RenderDevice(key, force, EDataFlow.Render, "headphones"),
+            Actions.InputDevice => await RenderDevice(key, force, EDataFlow.Capture, "mic"),
             Actions.VolumeUp => RenderVolume(key, "vol-up"),
             Actions.VolumeDown => RenderVolume(key, "vol-down"),
             Actions.VolumeSet => RenderVolume(key, key.Settings.Int("target", 0) == 0 ? "vol-mute" : "vol-set"),
@@ -235,16 +249,16 @@ sealed class Plugin
             _ => null,
         };
         if (image is null) return;
-        if (force && key.Action != Actions.OutputDevice) Log.Info($"key {key.Context[..8]}: {key.Action[(key.Action.LastIndexOf('.') + 1)..]} appeared");
+        if (force && key.Action is not (Actions.OutputDevice or Actions.InputDevice)) Log.Info($"key {key.Context[..8]}: {key.Action[(key.Action.LastIndexOf('.') + 1)..]} appeared");
         if (!force && ReferenceEquals(image, key.LastImage)) return;   // cached string identity == same picture
         key.LastImage = image;
         await _sd.SetImage(key.Context, image);
     }
 
-    async Task<string> RenderOutputDevice(KeyInstance key, bool log)
+    async Task<string> RenderDevice(KeyInstance key, bool log, EDataFlow flow, string defaultGlyph)
     {
         var s = key.Settings;
-        var snap = _snapshot;
+        var snap = SnapshotFor(flow);
         var deviceId = s.Str("deviceId");
         var deviceName = s.Str("deviceName");
         var dev = snap.ById(deviceId);
@@ -263,9 +277,9 @@ sealed class Plugin
         var state = dev is null || !dev.IsActive ? KeyState.Absent
                   : dev.Id == snap.DefaultMultimedia ? KeyState.Active
                   : KeyState.Inactive;
-        if (log) Log.Info($"key {key.Context[..8]}: '{deviceName ?? deviceId ?? "(none)"}' glyph={s.Str("glyph", "headphones")} state={state}");
+        if (log) Log.Info($"key {key.Context[..8]}: '{deviceName ?? deviceId ?? "(none)"}' glyph={s.Str("glyph", defaultGlyph)} state={state}");
 
-        var glyph = s.Str("glyph", "headphones");
+        var glyph = s.Str("glyph", defaultGlyph);
         var label = s.Bool("showLabel", false) ? ShortName(dev?.Name ?? deviceName) : null;
 
         if (deviceId is null)

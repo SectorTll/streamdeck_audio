@@ -141,7 +141,7 @@ public static class Glyphs
     /// <summary>Glyphs for Home Assistant entity keys.</summary>
     public static readonly string[] HomeIds = { "plug", "lamp", "floor", "window", "vr", "fan", "power", "monitor", "none" };
     /// <summary>Everything, for the preview sheet.</summary>
-    public static readonly string[] Ids = { "headphones", "speaker", "speakers", "monitor", "vr", "headset", "usb", "bluetooth", "vol-up", "vol-down", "vol-mute", "vol-set", "play", "pause", "play-pause", "plug", "lamp", "floor", "window", "fan", "power", "none" };
+    public static readonly string[] Ids = { "headphones", "speaker", "speakers", "monitor", "vr", "headset", "usb", "bluetooth", "mic", "mic-desk", "webcam", "vol-up", "vol-down", "vol-mute", "vol-set", "play", "pause", "play-pause", "plug", "lamp", "floor", "window", "fan", "power", "none" };
     static readonly Color Ink = Color.FromArgb(225, 225, 225);
 
     /// <summary>Folder with optional PNG glyphs (white on transparent); a file &lt;id&gt;.png overrides the drawn glyph.</summary>
@@ -180,6 +180,9 @@ public static class Glyphs
             case "headset": Headphones(g); Mic(g); break;
             case "usb": Usb(g); break;
             case "bluetooth": Bluetooth(g); break;
+            case "mic": Mic2(g); break;
+            case "mic-desk": MicDesk(g); break;
+            case "webcam": Webcam(g); break;
             case "vol-up": SpeakerBody(g, 56, 86); Waves(g, 56, 86, 3); break;
             case "vol-down": SpeakerBody(g, 60, 86); Waves(g, 60, 86, 1); break;
             case "vol-mute": SpeakerBody(g, 56, 86); Cross(g, 96, 86); break;
@@ -295,6 +298,45 @@ public static class Glyphs
         g.DrawLine(pen, 72, 86, 50, 72); g.FillEllipse(ink, 40, 62, 16, 16);
         g.DrawLine(pen, 72, 100, 94, 84); g.FillRectangle(ink, 92, 70, 16, 16);
         g.FillEllipse(ink, 61, 108, 22, 22);
+    }
+
+    // ---- microphone glyphs ---------------------------------------------------------------
+
+    /// <summary>Classic handheld/studio microphone: capsule, cradle arc, stand.</summary>
+    static void Mic2(Graphics g)
+    {
+        using var pen = Stroke(7);
+        using var ink = new SolidBrush(Ink);
+        using (var capsule = Renderer.RoundRect(58, 40, 28, 52, 14)) g.FillPath(ink, capsule);
+        g.DrawArc(pen, 46, 56, 52, 52, 0, 180);     // cradle
+        g.DrawLine(pen, 72, 108, 72, 122);           // stem
+        g.DrawLine(pen, 56, 122, 88, 122);           // base
+    }
+
+    /// <summary>Desk / USB condenser mic on a short stand with a side-address grille.</summary>
+    static void MicDesk(Graphics g)
+    {
+        using var pen = Stroke(7);
+        using var thin = Stroke(4);
+        using var ink = new SolidBrush(Ink);
+        using var black = new SolidBrush(Color.Black);
+        using (var body = Renderer.RoundRect(50, 40, 44, 60, 12)) g.FillPath(ink, body);
+        foreach (var y in new float[] { 54, 66, 78 }) { using var p = new Pen(Color.Black, 3); g.DrawLine(p, 58, y, 86, y); }   // grille
+        g.DrawLine(pen, 72, 100, 72, 114);           // stem
+        g.DrawArc(pen, 46, 104, 52, 24, 0, 180);     // tripod-ish base
+    }
+
+    /// <summary>Webcam: a lens on a small clip.</summary>
+    static void Webcam(Graphics g)
+    {
+        using var pen = Stroke(7);
+        using var ink = new SolidBrush(Ink);
+        using var black = new SolidBrush(Color.Black);
+        g.FillEllipse(ink, 42, 44, 60, 60);
+        g.FillEllipse(black, 58, 60, 28, 28);
+        g.FillEllipse(ink, 66, 68, 10, 10);
+        g.DrawLine(pen, 72, 104, 72, 114);
+        g.DrawLine(pen, 54, 118, 90, 118);
     }
 
     // ---- home glyphs ---------------------------------------------------------------------

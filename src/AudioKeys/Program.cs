@@ -140,6 +140,7 @@ static class Program
         Icon(dir, "plugin", "headphones", green, true, 1f);
         Icon(dir, "category", "headphones", green, true, 1f, 28);
         Icon(dir, "action-output", "headphones", green, true, 1f);
+        Icon(dir, "action-input", "mic", green, true, 1f);
         Icon(dir, "action-vol-up", "vol-up", green, true, 0.7f);
         Icon(dir, "action-vol-down", "vol-down", green, true, 0.3f);
         Icon(dir, "action-vol-set", "vol-set", green, true, 0.5f);

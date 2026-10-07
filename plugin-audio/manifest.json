@@ -26,6 +26,18 @@
       "States": [ { "Image": "imgs/action-output", "TitleAlignment": "bottom", "ShowTitle": false } ]
     },
     {
+      "Name": "Input Device",
+      "UUID": "com.deniss.audiokeys.input-device",
+      "Icon": "imgs/action-input",
+      "Tooltip": "Makes the chosen microphone the default input. The LED bar shows: selected, present, or absent.",
+      "PropertyInspectorPath": "ui/input-device.html",
+      "Controllers": [ "Keypad" ],
+      "SupportedInMultiActions": true,
+      "DisableAutomaticStates": true,
+      "UserTitleEnabled": true,
+      "States": [ { "Image": "imgs/action-input", "TitleAlignment": "bottom", "ShowTitle": false } ]
+    },
+    {
       "Name": "Volume Up",
       "UUID": "com.deniss.audiokeys.volume-up",
       "Icon": "imgs/action-vol-up",
