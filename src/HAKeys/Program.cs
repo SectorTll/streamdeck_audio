@@ -10,6 +10,7 @@ static class Program
     {
         var pluginDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
         Log.Init(pluginDir, "hakeys");
+        ConfigStore.Init(pluginDir);
         Glyphs.ImageDir = Path.Combine(pluginDir, "imgs", "glyphs");
 
         if (args.Length >= 2 && args[0] == "--icons") { WriteIcons(args[1]); return 0; }

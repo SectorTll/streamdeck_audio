@@ -46,7 +46,26 @@ sealed class Plugin
         _file = ConfigStore.Load();
         if (!string.IsNullOrEmpty(_file?.Token))
             _ha.Configure(_file!.Url ?? DefaultUrl, _file.Token);
+        else
+            _ = RetryConfigFile();
         return _sd.GetGlobalSettings();
+    }
+
+    /// <summary>Right after logon the profile folder has been seen as not-yet-readable; try again for a while.</summary>
+    async Task RetryConfigFile()
+    {
+        for (int i = 1; i <= 12 && !_ha.Connected; i++)
+        {
+            await Task.Delay(5000);
+            if (_ha.Connected) return;
+            var cfg = ConfigStore.Load();
+            if (string.IsNullOrEmpty(cfg?.Token)) continue;
+            Log.Info($"config file became readable on retry {i}");
+            _file = cfg;
+            _ha.Configure(cfg!.Url ?? DefaultUrl, cfg.Token);
+            await _sd.SetGlobalSettings(new JsonObject { ["haUrl"] = cfg.Url ?? DefaultUrl, ["haToken"] = cfg.Token });
+            return;
+        }
     }
 
     async Task OnEvent(string ev, JsonNode msg)

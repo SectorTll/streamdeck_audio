@@ -46,7 +46,12 @@ foreach ($p in $plugins) {
 }
 
 if (-not $NoRestart) {
-    Write-Host "== starting Stream Deck"
-    Start-Process 'C:\Program Files\Elgato\StreamDeck\StreamDeck.exe' -ArgumentList '--runinbk'
+    # Start Stream Deck through a one-shot scheduled task: it then runs with the user's real logon
+    # token, not as a child of whatever (possibly sandboxed) shell runs this script.
+    Write-Host "== starting Stream Deck (via scheduled task, real user token)"
+    schtasks /create /tn 'DeckKeys-StartStreamDeck' /sc once /st 23:59 /tr '"C:\Program Files\Elgato\StreamDeck\StreamDeck.exe" --runinbk' /f | Out-Null
+    schtasks /run /tn 'DeckKeys-StartStreamDeck' | Out-Null
+    Start-Sleep -Seconds 3
+    schtasks /delete /tn 'DeckKeys-StartStreamDeck' /f | Out-Null
 }
 Write-Host "done"
