@@ -3,7 +3,7 @@
   "Version": "0.1.0.0",
   "Author": "Deniss",
   "Description": "Home Assistant entity keys with a status LED: on, off, unavailable. One WebSocket connection, event driven, no polling.",
-  "URL": "https://github.com/deniss/StreamDeck-AudioKeys",
+  "URL": "https://github.com/SectorTll/streamdeck_audio",
   "Icon": "imgs/plugin",
   "Category": "HA Keys",
   "CategoryIcon": "imgs/category",

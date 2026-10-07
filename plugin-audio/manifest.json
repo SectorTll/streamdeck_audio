@@ -3,7 +3,7 @@
   "Version": "0.2.0.0",
   "Author": "Deniss",
   "Description": "Output device keys with a status LED, plus volume and play/pause keys whose LED shows the level. Event driven: no polling, no blinking.",
-  "URL": "https://github.com/deniss/StreamDeck-AudioKeys",
+  "URL": "https://github.com/SectorTll/streamdeck_audio",
   "Icon": "imgs/plugin",
   "Category": "Audio Keys",
   "CategoryIcon": "imgs/category",
