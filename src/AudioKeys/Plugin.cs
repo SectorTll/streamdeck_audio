@@ -42,7 +42,6 @@ sealed class Plugin
     AudioSnapshot _inputs;        // capture endpoints
     DateTime _snapshotAt;
     CancellationTokenSource? _debounce;
-    readonly System.Threading.Timer _resync;
 
     public Plugin(StreamDeck sd, CoreAudio audio, VolumeMonitor volume, MediaMonitor media)
     {
@@ -56,25 +55,6 @@ sealed class Plugin
         _volume.Changed += ScheduleRefresh;
         _media.Changed += ScheduleRefresh;
         _sd.Event += OnEvent;
-        // Safety net: every 2 minutes compare reality with what we believe. Costs one enumeration;
-        // logs loudly if it finds a change that arrived without a notification.
-        _resync = new System.Threading.Timer(_ => Resync(), null, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(2));
-    }
-
-    void Resync()
-    {
-        try
-        {
-            var r = _audio.Snapshot(EDataFlow.Render); var c = _audio.Snapshot(EDataFlow.Capture);
-            static string Sig(AudioSnapshot s) => s.DefaultMultimedia + "|" + string.Join(",", s.Devices.Where(d => d.IsActive).Select(d => d.Id).OrderBy(x => x));
-            if (Sig(r) != Sig(_snapshot) || Sig(c) != Sig(_inputs))
-            {
-                Log.Warn($"resync: audio state changed without a notification (default out = {r.ById(r.DefaultMultimedia)?.Name ?? "?"}, in = {c.ById(c.DefaultMultimedia)?.Name ?? "?"})");
-                _volume.Rebind();
-                ScheduleRefresh();
-            }
-        }
-        catch (Exception ex) { Log.Warn($"resync: {ex.Message}"); }
     }
 
     // ---- Stream Deck events ---------------------------------------------------------------
