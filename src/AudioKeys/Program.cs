@@ -19,6 +19,18 @@ static class Program
         if (args.Length >= 2 && args[0] == "--preview") { if (args.Length >= 3) Glyphs.ImageDir = args[2]; WritePreview(args[1]); return 0; }
         // `AudioKeys.exe --selftest` exercises device switching + volume without Stream Deck and prints what happened.
         if (args.Length >= 1 && args[0] == "--selftest") return await SelfTest();
+        // `AudioKeys.exe --status`: print active devices and defaults, no side effects.
+        if (args.Length >= 1 && args[0] == "--status")
+        {
+            using var a = new CoreAudio();
+            foreach (var flow in new[] { EDataFlow.Render, EDataFlow.Capture })
+            {
+                var snap = a.Snapshot(flow);
+                Console.WriteLine($"{flow}: default multimedia = {snap.ById(snap.DefaultMultimedia)?.Name ?? "?"}; communications = {snap.ById(snap.DefaultCommunications)?.Name ?? "?"}");
+                foreach (var d in snap.Devices.Where(d => d.IsActive).OrderBy(d => d.Name)) Console.WriteLine($"   active: {d.Name}  {d.Id[^14..]}");
+            }
+            return 0;
+        }
 
         int port = 0; string? uuid = null, registerEvent = null;
         for (int i = 0; i + 1 < args.Length; i += 2)

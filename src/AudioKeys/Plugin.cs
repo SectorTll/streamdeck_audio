@@ -21,6 +21,7 @@ sealed class KeyInstance
     public required string Action;
     public Settings Settings = new(null);
     public string? LastImage;
+    public KeyState? LastState;
 }
 
 /// <summary>All plugin behaviour: tracks visible keys, re-renders on audio/media events, handles presses and the property inspector.</summary>
@@ -39,7 +40,9 @@ sealed class Plugin
     readonly object _gate = new();
     AudioSnapshot _snapshot;      // render endpoints
     AudioSnapshot _inputs;        // capture endpoints
+    DateTime _snapshotAt;
     CancellationTokenSource? _debounce;
+    readonly System.Threading.Timer _resync;
 
     public Plugin(StreamDeck sd, CoreAudio audio, VolumeMonitor volume, MediaMonitor media)
     {
@@ -48,10 +51,30 @@ sealed class Plugin
         _inputs = _audio.Snapshot(EDataFlow.Capture);
         Log.Info($"render endpoints: {_snapshot.Devices.Count} total, {_snapshot.Devices.Count(d => d.IsActive)} active; default = {_snapshot.ById(_snapshot.DefaultMultimedia)?.Name ?? "?"}");
         Log.Info($"capture endpoints: {_inputs.Devices.Count} total, {_inputs.Devices.Count(d => d.IsActive)} active; default = {_inputs.ById(_inputs.DefaultMultimedia)?.Name ?? "?"}");
+        _snapshotAt = DateTime.UtcNow;
         _audio.Changed += ScheduleRefresh;
         _volume.Changed += ScheduleRefresh;
         _media.Changed += ScheduleRefresh;
         _sd.Event += OnEvent;
+        // Safety net: every 2 minutes compare reality with what we believe. Costs one enumeration;
+        // logs loudly if it finds a change that arrived without a notification.
+        _resync = new System.Threading.Timer(_ => Resync(), null, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(2));
+    }
+
+    void Resync()
+    {
+        try
+        {
+            var r = _audio.Snapshot(EDataFlow.Render); var c = _audio.Snapshot(EDataFlow.Capture);
+            static string Sig(AudioSnapshot s) => s.DefaultMultimedia + "|" + string.Join(",", s.Devices.Where(d => d.IsActive).Select(d => d.Id).OrderBy(x => x));
+            if (Sig(r) != Sig(_snapshot) || Sig(c) != Sig(_inputs))
+            {
+                Log.Warn($"resync: audio state changed without a notification (default out = {r.ById(r.DefaultMultimedia)?.Name ?? "?"}, in = {c.ById(c.DefaultMultimedia)?.Name ?? "?"})");
+                _volume.Rebind();
+                ScheduleRefresh();
+            }
+        }
+        catch (Exception ex) { Log.Warn($"resync: {ex.Message}"); }
     }
 
     // ---- Stream Deck events ---------------------------------------------------------------
@@ -65,6 +88,7 @@ sealed class Plugin
             case "willAppear":
                 if (context is null || action is null) return;
                 {
+                    if ((DateTime.UtcNow - _snapshotAt).TotalSeconds > 1) { _snapshot = _audio.Snapshot(EDataFlow.Render); _inputs = _audio.Snapshot(EDataFlow.Capture); _snapshotAt = DateTime.UtcNow; }
                     var key = new KeyInstance { Context = context, Action = action, Settings = new Settings(msg["payload"]?["settings"]) };
                     lock (_gate) _keys[context] = key;
                     await RenderKey(key, force: true);
@@ -228,6 +252,7 @@ sealed class Plugin
     {
         _snapshot = _audio.Snapshot(EDataFlow.Render);
         _inputs = _audio.Snapshot(EDataFlow.Capture);
+        _snapshotAt = DateTime.UtcNow;
         List<KeyInstance> keys;
         lock (_gate) keys = _keys.Values.ToList();
         foreach (var k in keys) await RenderKey(k, force: false);
@@ -278,6 +303,8 @@ sealed class Plugin
                   : dev.Id == snap.DefaultMultimedia ? KeyState.Active
                   : KeyState.Inactive;
         if (log) Log.Info($"key {key.Context[..8]}: '{deviceName ?? deviceId ?? "(none)"}' glyph={s.Str("glyph", defaultGlyph)} state={state}");
+        else if (key.LastState is not null && key.LastState != state) Log.Info($"key {key.Context[..8]}: '{deviceName ?? deviceId}' {key.LastState} -> {state}");
+        key.LastState = state;
 
         var glyph = s.Str("glyph", defaultGlyph);
         var label = s.Bool("showLabel", false) ? ShortName(dev?.Name ?? deviceName) : null;
